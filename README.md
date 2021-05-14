@@ -3,6 +3,11 @@ Image-based Displacement Identification (IDI) implementation in python.
 
 See the [documentation](https://pyidi.readthedocs.io/en/latest/index.html) for `pyIDI`.
 
+To install `pyIDI`, run:
+```
+pip install pyidi
+```
+
 # BASIC USAGE:
 Create an instance:
 ```
