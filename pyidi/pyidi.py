@@ -12,13 +12,14 @@ from magicgui import magicgui
 import warnings
 warnings.simplefilter("default")
 
-from .methods import IDIMethod, SimplifiedOpticalFlow, GradientBasedOpticalFlow, LucasKanadeSc, LucasKanade, LucasKanadeSc2
+from .methods import IDIMethod, SimplifiedOpticalFlow, GradientBasedOpticalFlow, LucasKanadeSc, LucasKanade, LucasKanadeSc2, LargeDisplacementOpticalFlow
 from . import tools
 from . import selection
 from . import gui
 
 available_method_shortcuts = [
     ('sof', SimplifiedOpticalFlow),
+    ('ldof', LargeDisplacementOpticalFlow),
     ('lk', LucasKanade),
     ('lk_scipy', LucasKanadeSc),
     ('lk_scipy2', LucasKanadeSc2)
@@ -135,7 +136,10 @@ class pyIDI:
             marker = kwargs.get('marker', '.')
             color = kwargs.get('color', 'r')
             fig, ax = plt.subplots(figsize=figsize)
-            ax.imshow(self.mraw[0].astype(float), cmap=cmap)
+            try:
+                ax.imshow(self.mraw[self.method.mraw_range[0]].astype(float), cmap=cmap)
+            except:
+                ax.imshow(self.mraw[0].astype(float), cmap=cmap)
             ax.scatter(self.points[:, 1], self.points[:, 0], 
                 marker=marker, color=color)
             plt.grid(False)
