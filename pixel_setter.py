@@ -4,7 +4,7 @@ from matplotlib.path import Path
 import matplotlib.animation as animation
 import pickle
 from scipy.signal import find_peaks
-from scipy.ndimage import maximum_filter, generate_binary_structure, binary_erosion
+from scipy.ndimage import maximum_filter, binary_erosion, rotate
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from mpl_interactions import ioff, panhandler, zoom_factory
@@ -19,31 +19,37 @@ ref_img = None
 class PixelSetter():
     def __init__(self, image, pix_i = [], pix_j = [], file_name = None, frame_nr = None, show_methods = False):
         if file_name is not None:
-            self.file_name = file_name
+            self.file_name  = file_name
         else:
-            self.file_name = "No file name was given"
+            self.file_name  = "No file name was given"
         if frame_nr is not None:
-            self.frame_nr = frame_nr
+            self.frame_nr   = frame_nr
         else:
-            self.frame_nr = "No frame number was given"
-        self.method = "polygon_include"
-        self.image = image
+            self.frame_nr   = "No frame number was given"
+        self.method         = "polygon_include"
+        self.image          = image
         self.clicked_points = []
-        self.path = None
-        self.pix_i = pix_i
-        self.pix_j = pix_j
+        self.path           = None
+        self.pix_i          = pix_i
+        self.pix_j          = pix_j
         self.pix_i_selection = []
         self.pix_j_selection = []
-        self.reset = False
+        self.reset          = False
         self.reference_image_center_i = []
         self.reference_image_center_j = []
-        self.ref_imgs = []
-        self.Low_I_limit = 20000
+        self.ref_imgs       = []
+        self.Low_I_limit    = 20000
         self.neighborhood_size = 3
         self.Low_I = self.image < self.Low_I_limit
-        self.cor_lim_init = []
-        self.color_vec = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
-        self.marker_vec = ['.', 'o', 'v', '^', '<', '>', 's', 'p', '*', 'h', 'H', '+', 'x', 'D', 'd']
+        self.cor_lim_init   = 0.83
+        self.cor_lim_vec    = []
+        self.color_vec      = ['r', 'g', 'b', 'c', 'm', 'y']
+        self.marker_vec     = ['.', 'o', 'v', '^', '<', '>', 's', 'p', '*', 'h', 'H', '+', 'x', 'D', 'd']
+        self.sliders        = []
+        self.include_rotation = False
+        self.tracking_points_x = []
+        self.tracking_points_y = []
+        self.tracking_points = set()
 
         # Initialize figures
         # Figure with Tracking dots/reference centers/ROI
@@ -94,6 +100,9 @@ class PixelSetter():
         print("polygon_exclude: Select a polygon to exclude from the ROI")
         print("polygon_include: Select a polygon to include in the ROI")
         print("by_hand: Select the pixels by hand")
+    
+    def update_tracking_points(self):
+        self.tracking_points = self.tracking_points | set(zip(self.tracking_points_y, self.tracking_points_x))
 
     def onclick(self, event):
         """
@@ -130,23 +139,7 @@ class PixelSetter():
             self.polygon_plot.set_data(np.append(xy[:, 0], xy[0, 0]), np.append(xy[:, 1],xy[0, 1]))
             self.path = Path(np.asarray(self.clicked_points))
         self.fig.canvas.draw_idle()
-    
-    def onclick_ref_fig(self, event):
-        """Add the clicked pixels to self.reference_image_center_i and self.reference_image_center_j
-        """
-        x, y = int(round(event.xdata)), int(round(event.ydata))
-        if event.button == 3:
-            self.reference_image_center_i.append(y)
-            self.reference_image_center_j.append(x)
-            self.reference_fig_plot.set_data(self.reference_image_center_j, self.reference_image_center_i)
-            self.fig_img.canvas.draw_idle()
-            self.add_reference_image(y, x)
-            self.plot_reference_images()
-            sliders = self.cross_correlate_all()
-            self.fig_but.canvas.draw_idle()
-            for slider in sliders:
-                slider.on_changed(self.fig_img.canvas.draw_idle)
-    
+        
     def onclick_ref_fig2(self, event):
         """Add the clicked pixels to self.reference_image_center_i and self.reference_image_center_j
         """
@@ -161,23 +154,8 @@ class PixelSetter():
             self.ref_imgs.append(np.array(self.image[y-self.neighborhood_size:y+(self.neighborhood_size+1), x-self.neighborhood_size:x+(self.neighborhood_size+1)]))
             self.plot_reference_images()
             self.reset_but_fig()
-            n_plots = len(self.ref_imgs)
-            y0_vec = np.linspace(0.1, 0.9, n_plots)
-            self.sliders = []
-            for i, (y0, ref_img) in enumerate(zip(y0_vec, self.ref_imgs)):
-                axfreq = self.fig_but.add_axes([0.1, y0, .7, 0.05])
-                self.marker_plot = self.ax_but.plot(0.9, y0, self.color_vec[i%len(self.color_vec)]+self.marker_vec[i%len(self.marker_vec)], markersize=10)
-                
-                slider = Slider(axfreq, label=f"cor_lim: {i}", valmin=0, valmax=1, valinit=0.7)
-                self.sliders.append(slider)
-                controls = iplt.scatter(self.cross_correlate_x, self.cross_correlate_y, cor_lim=self.sliders[i], ax=self.ax_img, marker=self.marker_vec[i%len(self.marker_vec)],
-                                         color=self.color_vec[i%len(self.color_vec)], s=5)
-
-            # sliders = self.cross_correlate_all()
-
+            self.cross_correlate_all()
             plt.show()
-
-
 
     def onkey_exclude(self, event):
         """check which points are inside the polygon when the user presses 'enter'
@@ -306,7 +284,6 @@ class PixelSetter():
                 row = int(i // num_cols)
                 col = int(i % num_cols)
                 self.ax_ref[row, col].imshow(ref_img, cmap='gray')
-        # plt.show()
 
     def generate_reference_image(self, neighborhood_size = 3, seperate_save = False, filename = None, path = 'C:/Users/thijs/Documents/GitHub/pyidi_data/reference_figs/', plot = False):
         self.ax_img.set_xlim(0, self.image.shape[1])
@@ -339,7 +316,6 @@ class PixelSetter():
                     row = int(i // num_cols)
                     col = int(i % num_cols)
                     ax2[row, col].imshow(ref_img, cmap='gray')
-            # plt.show()
 
     def cross_correlate(self, ref_img, cor_lim=.75, I_lim = 20000):
         corr = match_template(self.image, ref_img, pad_input=True)
@@ -352,21 +328,38 @@ class PixelSetter():
 
     def cross_correlate_x(self, cor_lim):
         global ref_img
-        corr = match_template(self.image, ref_img, pad_input=True)
-        high_corr = corr > cor_lim
-        corr = (corr-np.min(corr)) / np.max(corr-np.min(corr))
-        peaks_local = detect_peaks(corr)
-        return np.where(peaks_local & high_corr & self.Low_I)[1]
+        corr_max = match_template(self.image, ref_img, pad_input=True)
+        if self.include_rotation:
+            _ref_img = np.copy(ref_img)
+            for i in range(3):
+                _ref_img = np.rot90(_ref_img)
+                corr = match_template(self.image, _ref_img, pad_input=True)
+                corr_max = np.maximum(corr_max, corr)
+        corr_max = (corr_max-np.min(corr_max)) / np.max(corr_max-np.min(corr_max))
+        high_corr = corr_max > cor_lim
+        peaks_local = detect_peaks(corr_max)
+        self.tracking_points_x = np.where(peaks_local & high_corr & self.Low_I)[1]
+        return self.tracking_points_x
 
     def cross_correlate_y(self, x, cor_lim):
         global ref_img
-        corr = match_template(self.image, ref_img, pad_input=True)
-        high_corr = corr > cor_lim
-        corr = (corr-np.min(corr)) / np.max(corr-np.min(corr))
-        peaks_local = detect_peaks(corr)
-        return np.where(peaks_local & high_corr & self.Low_I)[0]
+        corr_max = match_template(self.image, ref_img, pad_input=True)
+        if self.include_rotation:
+            _ref_img = np.copy(ref_img)
+            for i in range(3):
+                _ref_img = np.rot90(_ref_img)
+                corr = match_template(self.image, _ref_img, pad_input=True)
+                corr_max = np.maximum(corr_max, corr)
+        corr_max = (corr_max-np.min(corr_max)) / np.max(corr_max-np.min(corr_max))
+        print(np.max(corr_max))
+        high_corr = corr_max > cor_lim
+        peaks_local = detect_peaks(corr_max)
+        self.tracking_points_y = np.where(peaks_local & high_corr & self.Low_I)[0]
+        return self.tracking_points_y
 
     def reset_but_fig(self):
+        for i, slider in enumerate(self.sliders):
+            self.cor_lim_vec[i] = slider.val
         plt.close(self.fig_but)
         self.fig_but, self.ax_but = plt.subplots()
         self.set_fig_location(self.fig_but, 0.65, 0.55, 0.3, 0.3)
@@ -379,31 +372,21 @@ class PixelSetter():
 
 
     def cross_correlate_all(self):
-        # fig3, ax3 = plt.subplots()
-        # for ax in self.fig_but.axes:
-        #     if ax.get_title() == 'Control Panel':
-        #         continue
-        #     self.fig_but.delaxes(ax)
-
-        # for ax in self.fig_img.axes:
-        #     for line in ax.lines:
-        #         line.remove()
         self.reset_but_fig()
-        color_vec = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
-        marker_vec = ['.', 'o', 'v', '^', '<', '>', 's', 'p', '*', 'h', 'H', '+', 'x', 'D', 'd']
         global ref_img
         n_plots = len(self.ref_imgs)
         y0_vec = np.linspace(0.1, 0.9, n_plots)
-        sliders = []
+        self.sliders = []
+        self.cor_lim_vec.append(self.cor_lim_init)
         for i, (y0, ref_img) in enumerate(zip(y0_vec, self.ref_imgs)):
             axfreq = self.fig_but.add_axes([0.1, y0, .7, 0.05])
-            self.marker_plot = self.ax_but.plot(0.9, y0, color_vec[i%len(color_vec)]+marker_vec[i%len(marker_vec)], markersize=10)
+            self.marker_plot = self.ax_but.plot(0.9, y0, self.color_vec[i%len(self.color_vec)]+self.marker_vec[i%len(self.marker_vec)], markersize=10)
             
-            slider = Slider(axfreq, label=f"cor_lim: {i}", valmin=0, valmax=1, valinit=0.7)
-            sliders.append(slider)
-            controls = iplt.scatter(self.cross_correlate_x, self.cross_correlate_y, cor_lim=sliders[i], ax=self.ax_img, marker=marker_vec[i%len(marker_vec)], color=color_vec[i%len(color_vec)], s=5)
-        
-        return sliders
+            slider = Slider(axfreq, label=f"cor_lim: {i}", valmin=0, valmax=1.01, valinit=self.cor_lim_vec[i])
+            self.sliders.append(slider)
+            controls = iplt.scatter(self.cross_correlate_x, self.cross_correlate_y, cor_lim=self.sliders[i], ax=self.ax_img, marker=self.marker_vec[i%len(self.marker_vec)],
+                                     color=self.color_vec[i%len(self.color_vec)], s=7)
+        self.update_tracking_points()
 
     def save(self, filename = None, path = 'C:/Users/thijs/Documents/GitHub/pyidi_data/tracking_pixels/'):
         if filename is None:
