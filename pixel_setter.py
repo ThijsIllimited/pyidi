@@ -11,8 +11,11 @@ from mpl_interactions import ioff, panhandler, zoom_factory
 import mpl_interactions.ipyplot as iplt
 from matplotlib.widgets import Slider
 from skimage.feature import match_template
+from skimage.transform import resize
 from PyQt5.QtWidgets import QApplication, QDesktopWidget
 from matplotlib.gridspec import GridSpec
+from scipy.stats import norm
+import dill
 
 ref_img = None
 
@@ -47,6 +50,7 @@ class PixelSetter():
         self.marker_vec     = ['.', 'o', 'v', '^', '<', '>', 's', 'p', '*', 'h', 'H', '+', 'x', 'D', 'd']
         self.sliders        = []
         self.include_rotation = False
+        self.tracking_points_vec = []
         self.tracking_points_x = []
         self.tracking_points_y = []
         self.tracking_points = set()
@@ -101,8 +105,13 @@ class PixelSetter():
         print("polygon_include: Select a polygon to include in the ROI")
         print("by_hand: Select the pixels by hand")
     
+    def update_tracking_points_vector(self, i):
+        self.tracking_points_vec[i] = list(zip(self.tracking_points_x, self.tracking_points_y))
+
     def update_tracking_points(self):
-        self.tracking_points = self.tracking_points | set(zip(self.tracking_points_y, self.tracking_points_x))
+        # self.tracking_points = set([t for sublist in self.tracking_points_vec for t in sublist])
+        self.tracking_points = set([item for sublist in self.tracking_points_vec for item in sublist])
+        # self.tracking_points = self.tracking_points | set(zip(self.tracking_points_y, self.tracking_points_x))
 
     def onclick(self, event):
         """
@@ -145,6 +154,9 @@ class PixelSetter():
         """
         x, y = int(round(event.xdata)), int(round(event.ydata))
         if event.button == 3:
+            self.tracking_points_vec.append([])
+            self.ax_img.set_xlim(0, self.image.shape[1])
+            self.ax_img.set_ylim(self.image.shape[0], 0)
             global ref_img
             self.reference_image_center_i.append(y)
             self.reference_image_center_j.append(x)
@@ -325,7 +337,6 @@ class PixelSetter():
         y, x = np.where(peaks_local & high_corr & self.Low_I)
         return x, y, corr
     
-
     def cross_correlate_x(self, cor_lim):
         global ref_img
         corr_max = match_template(self.image, ref_img, pad_input=True)
@@ -351,7 +362,6 @@ class PixelSetter():
                 corr = match_template(self.image, _ref_img, pad_input=True)
                 corr_max = np.maximum(corr_max, corr)
         corr_max = (corr_max-np.min(corr_max)) / np.max(corr_max-np.min(corr_max))
-        print(np.max(corr_max))
         high_corr = corr_max > cor_lim
         peaks_local = detect_peaks(corr_max)
         self.tracking_points_y = np.where(peaks_local & high_corr & self.Low_I)[0]
@@ -370,7 +380,6 @@ class PixelSetter():
         self.fig_but.subplots_adjust(left=0, right=1, bottom=0, top=1)
         self.marker_plot = self.ax_but.plot([],[])
 
-
     def cross_correlate_all(self):
         self.reset_but_fig()
         global ref_img
@@ -386,18 +395,54 @@ class PixelSetter():
             self.sliders.append(slider)
             controls = iplt.scatter(self.cross_correlate_x, self.cross_correlate_y, cor_lim=self.sliders[i], ax=self.ax_img, marker=self.marker_vec[i%len(self.marker_vec)],
                                      color=self.color_vec[i%len(self.color_vec)], s=7)
+            self.update_tracking_points_vector(i)
         self.update_tracking_points()
+
+    def generate_Zi(self, pix_i_n, pix_j_n, mu, sigma, bits, theta):
+        dist = norm(mu, sigma)
+        slope = np.tan(theta)
+        x = np.linspace(-pix_i_n, pix_i_n, pix_i_n*12)
+        y = np.linspace(-pix_i_n, pix_i_n, pix_j_n*12)
+
+        X, Y = np.meshgrid(x, y)
+        Z = np.maximum(dist.pdf(Y+slope*X), dist.pdf(-X+slope*Y))
+        Z = (1- Z / np.max(Z)) * (2**bits-1)
+
+        compressed_Z = resize(Z, (pix_i_n, pix_j_n)).astype(np.uint16)
+        return X, Y, Z, compressed_Z
+
+    def creat_synthetic_reference_pictures(self, bits=16, pix_i_n=7, pix_j_n=7, theta_vec = np.linspace(0, np.pi/4, 4), sigma=1, plot = False):
+        mu = 0
+        # create a normal distribution object
+        n_cols = 2
+        n_rows = 2
+        dist        = norm(mu, sigma)
+        fig, axs    = plt.subplots(ncols=n_cols, nrows=n_rows, figsize=(15,15), subplot_kw={'projection': '3d'})
+        fig2, axs2  = plt.subplots(ncols=2, nrows=2, figsize=(15,15))
+        reference_crosses = []
+        for ax_i, theta in enumerate(theta_vec):
+            X, Y, Z, compressed_Z = self.generate_Zi(pix_i_n, pix_j_n, mu, sigma, bits, theta_vec[ax_i])
+            reference_crosses.append(compressed_Z)
+            row = ax_i // n_cols
+            col = ax_i % n_cols
+            axs[row, col].plot_surface(X, Y, Z, cmap='viridis')
+            axs[row, col].set_xlabel('X')
+            axs[row, col].set_ylabel('Y')
+            axs[row, col].set_zlabel('I(x,y)')
+            axs[row, col].view_init(elev=90, azim=270) # set azim to 270 degrees
+            axs2[row, col].imshow(compressed_Z, cmap='gray')
+        plt.show()
 
     def save(self, filename = None, path = 'C:/Users/thijs/Documents/GitHub/pyidi_data/tracking_pixels/'):
         if filename is None:
             filename = self.file_name
         with open(path + filename+'.pkl', 'wb') as f:
-            pickle.dump(self, f)
+            dill.dump(self, f)
 
     @staticmethod
     def load(filename, path = 'C:/Users/thijs/Documents/GitHub/pyidi_data/tracking_pixels/'):
         with open(path + filename+'.pkl', 'rb') as f:
-            obj = pickle.load(f)
+            obj = dill.load(f)
         if not isinstance(obj, PixelSetter):
             raise ValueError(f"Invalid object type: {type(obj)}")
         fig, ax = plt.subplots()
