@@ -39,6 +39,7 @@ class PixelSetter():
         self.tracking_points_y = []
         self.max_plots = 30
         self.y0_vec          = np.linspace(0.1, 0.9, self.max_plots)
+        self.displacements = []
 
         self.color_vec      = ['r', 'g', 'b', 'c', 'm', 'y']
         self.marker_vec     = ['.', 'o', 'v', '^', '<', '>', 's', 'p', '*', 'h', 'H', '+', 'x', 'D', 'd']
@@ -61,7 +62,7 @@ class PixelSetter():
         self.ax_but.axis('off')
         self.fig_but.subplots_adjust(left=0, right=1, bottom=0, top=1)
         self.marker_plot = self.ax_but.plot([],[])
-    
+
     def set_fig_location(self, fig, x, y, width, height):
         fig.canvas.manager.window.setGeometry(int(self.screen.width() * x), int(self.screen.height() * y) , int(self.screen.width() * width), int(self.screen.height() * height))
     
@@ -72,6 +73,9 @@ class PixelSetter():
     def set_neighborhood_size(self, neighborhood_size):
         self.neighborhood_size = neighborhood_size
     
+    def add_displacements(seld, displacements):
+        self.displacements = displacements
+
     def combine_tracking_points(self):
         self.tracking_points = set()
         for slider, ref_img in zip(self.sliders, self.ref_imgs):
@@ -140,28 +144,11 @@ class PixelSetter():
         n_plots = len(self.ref_imgs) - 1
         y0 = self.y0_vec[n_plots]
         axfreq = self.fig_but.add_axes([0.1, y0, .7, 0.05])
-        self.ax_but.plot(0.9, y0*1.1, self.color_vec[n_plots%len(self.color_vec)]+self.marker_vec[n_plots%len(self.marker_vec)], markersize=10)
+        self.ax_but.plot(0.9, y0*1.05+.1, self.color_vec[n_plots%len(self.color_vec)]+self.marker_vec[n_plots%len(self.marker_vec)], markersize=10)
         slider = Slider(axfreq, label=f"cor_lim: {n_plots}", valmin=0, valmax=1.0, valinit=self.cor_lim_init)
         self.sliders.append(slider)
         controls = iplt.scatter(self.cross_correlate_x, self.cross_correlate_y, cor_lim=self.sliders[n_plots], fig_number=n_plots, ax=self.ax_img, marker=self.marker_vec[n_plots%len(self.marker_vec)],
                                      color=self.color_vec[n_plots%len(self.color_vec)], s=7)
-
-    def cross_correlate_all(self):
-        self.reset_but_fig()
-        n_plots = len(self.ref_imgs)
-        y0_vec = np.linspace(0.1, 0.9, n_plots)
-        self.sliders = []
-        self.cor_lim_vec.append(self.cor_lim_init)
-        for i, (y0, ref_img) in enumerate(zip(y0_vec, self.ref_imgs)):
-            axfreq = self.fig_but.add_axes([0.1, y0, .7, 0.05])
-            self.marker_plot = self.ax_but.plot(0.9, y0, self.color_vec[i%len(self.color_vec)]+self.marker_vec[i%len(self.marker_vec)], markersize=10)
-            
-            slider = Slider(axfreq, label=f"cor_lim: {i}", valmin=0, valmax=1.01, valinit=self.cor_lim_vec[i])
-            self.sliders.append(slider)
-            controls = iplt.scatter(self.cross_correlate_x, self.cross_correlate_y, cor_lim=self.sliders[i], fig_number=i, ax=self.ax_img, marker=self.marker_vec[i%len(self.marker_vec)],
-                                     color=self.color_vec[i%len(self.color_vec)], s=7)
-            self.update_tracking_points_vector(i)
-        self.update_tracking_points()
 
     def plot_reference_images(self):
         plt.close(self.fig_ref)
@@ -232,3 +219,13 @@ class PixelSetter():
         detected_peaks = local_max ^ eroded_background
 
         return detected_peaks
+    
+    def save(self, file_name):
+        with open(file_name, 'wb') as f:
+            for key, value in self.__dict__.items():
+                if key == 'image':
+                    value = np.array(value)
+                try:
+                    dill.dump((key, value), f)
+                except:
+                    print(f'Could not pickle {key}')
