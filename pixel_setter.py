@@ -506,3 +506,26 @@ def detect_peaks(image, neighborhood_size=2):
     detected_peaks = local_max ^ eroded_background
 
     return detected_peaks
+
+def animate_mode_shape(A, mode_number, tp_lim, multiplier=1, indices_to_plot = None, frames = range(200), interval = 30):
+    if indices_to_plot is not None:
+        A = A[indices_to_plot, :]
+        tp_lim = tp_lim[indices_to_plot]
+    A_imag = np.imag(A[:,mode_number])/np.linalg.norm(A[:,mode_number])
+    A_real = np.real(A[:,mode_number])/np.linalg.norm(A[:,mode_number])
+    fig, ax = plt.subplots(figsize=(15, 15), subplot_kw={'projection': '3d'})
+    ax.set_title(f'Mode {mode_number+1} - {cam.nat_freq[mode_number]:.2f} Hz')
+    ax.set_zlabel('Normalized mode shape')
+    # Plot the inital position of the points
+    ax.plot(tp_lim[:,1], -tp_lim[:,0], np.zeros_like(tp_lim[:,0]), 'k.', markersize=0.5)
+    mode_plot, = ax.plot(tp_lim[:,1], -tp_lim[:,0], np.zeros_like(tp_lim[:,0]), 'r.', markersize=1)
+
+    def update(frame):
+        Z = multiplier*(A_imag * np.sin(frame * np.pi / 100) + A_real * np.cos(frame * np.pi / 100))
+        mode_plot.set_data(tp_lim[:,1], -tp_lim[:,0])
+        mode_plot.set_3d_properties(Z)
+        return mode_plot
+
+    ani = animation.FuncAnimation(fig, update, frames=frames, interval=interval)
+    plt.show()
+    return ani
