@@ -31,7 +31,8 @@ class PixelSetter():
         self.ref_imgs       = []
         self.Low_I_limit    = 20000
         self.neighborhood_size = 3
-        self.Low_I = self.image < self.Low_I_limit
+        if image is not None:
+            self.Low_I = self.image < self.Low_I_limit
         self.cor_lim_init   = 0.83
         self.sliders        = []
         self.include_rotation = False
@@ -229,3 +230,15 @@ class PixelSetter():
                     dill.dump((key, value), f)
                 except:
                     print(f'Could not pickle {key}')
+    
+    @staticmethod
+    def load(file_name):
+        with open(file_name, 'rb') as f:
+            obj = PixelSetter(np.array([]))
+            while True:
+                try:
+                    key, value = dill.load(f)
+                    obj.__dict__[key] = value
+                except EOFError:
+                    break
+        return obj
