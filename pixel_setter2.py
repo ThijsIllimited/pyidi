@@ -11,10 +11,8 @@ from mpl_interactions import ioff, panhandler, zoom_factory
 import mpl_interactions.ipyplot as iplt
 from matplotlib.widgets import Slider
 from skimage.feature import match_template
-from skimage.transform import resize
-from PyQt5.QtWidgets import QApplication, QDesktopWidget
+from PyQt5.QtWidgets import QDesktopWidget
 from matplotlib.gridspec import GridSpec
-from scipy.stats import norm
 import dill
 
 ref_img = None
