@@ -226,7 +226,8 @@ class LucasKanade(IDIMethod):
                         G=G, 
                         F_spline=self.interpolation_splines[p], 
                         maxiter=self.max_nfev,
-                        tol=self.tol
+                        tol=self.tol,
+                        p=p
                         )
 
                     self.displacements[p, ii, :] = displacements + d_init
@@ -247,7 +248,7 @@ class LucasKanade(IDIMethod):
                     print(f'Time to complete: {full_time:.1f} s')
 
 
-    def optimize_translations(self, G, F_spline, maxiter, tol, d_subpixel_init=(0, 0)):
+    def optimize_translations(self, G, F_spline, maxiter, tol, d_subpixel_init=(0, 0), p=0):
         """
         Determine the optimal translation parameters to align the current
         image subset `G` with the interpolated reference image subset `F`.
@@ -271,7 +272,7 @@ class LucasKanade(IDIMethod):
         Gx, Gy = tools.get_gradient(G_float)
         G_float_clipped = G_float[1:-1, 1:-1]
 
-        A_inv = compute_inverse_numba(Gx, Gy)
+        A_inv = compute_inverse_numba(Gx, Gy, p)
 
         # initialize values
         error = 1.
@@ -732,11 +733,13 @@ def worker(points, idi_kwargs, method_kwargs, i):
 
 
 # @nb.njit
-def compute_inverse_numba(Gx, Gy):
+def compute_inverse_numba(Gx, Gy, p=0):
     Gx2 = np.sum(Gx**2)
     Gy2 = np.sum(Gy**2)
     GxGy = np.sum(Gx * Gy)
-
+    if (GxGy**2 - Gx2*Gy2) == 0:
+        print(f'Dividing by zero at index {p}.')
+        return np.array([[0, 0], [0, 0]])
     A_inv = 1/(GxGy**2 - Gx2*Gy2) * np.array([[GxGy, -Gx2], [-Gy2, GxGy]])
 
     return A_inv

@@ -452,19 +452,29 @@ class PixelSetter():
         plt.show()
         return obj, (fig, ax)    
     
-def play_video(video, frame_range, interval=30, points = None, axis = None):
+def play_video(video, frame_range, interval=30, points = None, axis = None, show_saturation = False, bit_depth = 16):
     fig, ax = plt.subplots()
     im = ax.imshow(video.mraw[frame_range[0]], cmap='gray')
-    text = ax.text(0.95, 0.05, '', transform=ax.transAxes, color='black', ha='right', va='bottom')
-    if points is not None:
-        pts = ax.plot(points[:,0,1], points[:,0,0], 'r.')
+    text = ax.text(0.65, 0.05, '', transform=ax.transAxes, color='black', ha='right', va='bottom')
     if axis is not None:
         ax.set_xlim(axis[0])
         ax.set_ylim(axis[1])
-    # plt.plot([0, 500], [50, 50], 'r-')  
+    if show_saturation:
+        over_sat = np.where(video.mraw[frame_range[0]] > int(0.99*(2**bit_depth-1)))
+        over_sat_plot = ax.plot(over_sat[1], over_sat[0], 'b.', alpha=0.2)
+        under_sat = video.mraw[frame_range[0]] < int(0.01*(2**bit_depth-1))
+        under_sat_plot = ax.plot(under_sat[1], under_sat[0], 'g.', alpha=0.2)
+    if points is not None:
+        pts = ax.plot(points[:,0,1], points[:,0,0], 'r.')
+
     def update(i):
         im.set_data(video.mraw[i])
         text.set_text(f'Frame {i}')
+        if show_saturation:
+            over_sat = np.where(video.mraw[i] > int(0.99*(2**bit_depth-1)))
+            over_sat_plot[0].set_data(over_sat[1], over_sat[0])
+            under_sat = np.where(video.mraw[i] < int(0.01*(2**bit_depth-1)))
+            under_sat_plot[0].set_data(under_sat[1], under_sat[0])
         if points is not None:
             pts[0].set_data(points[:,i,1], points[:,i,0])
             return im, text, pts
