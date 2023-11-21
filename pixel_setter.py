@@ -480,7 +480,7 @@ def play_video(video, frame_range, interval=30, points = None, axis = None, show
             return im, text, pts
         return im, text
     
-    ani = animation.FuncAnimation(fig, update, frames=frame_range, interval=interval) # 00: range(2550,n_frames), range(3300, 3310) ,frames=range(2500, 4000)
+    ani = animation.FuncAnimation(fig, update, frames=frame_range, interval=interval)
     plt.show()
     return ani
 
