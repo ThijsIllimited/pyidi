@@ -24,6 +24,7 @@ class PixelSetter():
         else:
             self.file_name  = "No file name was given"
         self.image          = image
+        self.bit_depth      = 16
         self.reference_image_center_i = []
         self.reference_image_center_j = []
         self.ref_imgs       = []
@@ -34,8 +35,9 @@ class PixelSetter():
         self.cor_lim_init   = 0.83
         self.sliders        = []
         self.include_rotation = False
-        self.tracking_points_x = []
-        self.tracking_points_y = []
+        self.tracking_points_x = np.array([])
+        self.tracking_points_y = np.array([])
+        self.tracking_points_manual = []
         self.max_plots = 30
         self.y0_vec          = np.linspace(0.1, 0.9, self.max_plots)
         self.displacements = []
@@ -49,6 +51,7 @@ class PixelSetter():
         self.fig_img.canvas.manager.window.setGeometry(0, int(self.screen.height() * 0.1) , int(self.screen.width() * 0.6), int(self.screen.height() * 0.6))
         self.ax_img.imshow(self.image, cmap='gray')
         self.reference_fig_plot, = self.ax_img.plot([], [], 'g.', markersize=3)
+        self.tracking_points_plot, = self.ax_img.plot([], [], 'r.', markersize=3, alpha=0.5)
         # Figure that shows the reference images
         self.fig_ref, self.ax_ref = plt.subplots()
         self.fig_ref.canvas.manager.window.setGeometry(int(self.screen.width() * 0.65), int(self.screen.height() * 0.10) , int(self.screen.width() * 0.3), int(self.screen.height() * 0.3))
@@ -72,14 +75,16 @@ class PixelSetter():
     def set_neighborhood_size(self, neighborhood_size):
         self.neighborhood_size = neighborhood_size
     
-    def add_displacements(seld, displacements):
+    def add_displacements(self, displacements):
         self.displacements = displacements
 
     def combine_tracking_points(self):
-        self.tracking_points = set()
+        tp = self.tracking_points_manual
+        self.tracking_points = set(self.tracking_points_manual)
         for slider, ref_img in zip(self.sliders, self.ref_imgs):
             pix_i , pix_j = self.cross_correlate(ref_img, cor_lim=slider.val)
             self.tracking_points = self.tracking_points.union(set(zip(pix_i, pix_j)))
+
         self.tracking_points = list(self.tracking_points)
         
     def onclick_ref_fig(self, event):
@@ -103,6 +108,13 @@ class PixelSetter():
             if fig_numbers:
                 max_fig_number = max(fig_numbers)
                 plt.close(max_fig_number)
+        elif event.button == 1:
+            self.tracking_points_manual.append((y, x))
+            # self.tracking_points_x = np.append(self.tracking_points_x, int(x))
+            # self.tracking_points_y = np.append(self.tracking_points_y, int(y))
+            self.tracking_points_plot.set_data(*zip(*[(y, x) for x, y in self.tracking_points_manual]))
+            # self.tracking_points_plot.set_data(*zip(*self.tracking_points_manual))
+            self.fig_img.canvas.draw_idle()
 
     def choose_reference_centers(self):
         zoom_factory(self.ax_img)
@@ -229,6 +241,20 @@ class PixelSetter():
                 except:
                     print(f'Could not pickle {key}')
     
+    def optical_gradient_scores(self, window_size):
+        self.grad_score = []
+        self.under_saturated_points = []
+        for point in self.tracking_points:
+            i, j = point
+            window = self.image[i-window_size:i+window_size+1, j-window_size:j+window_size+1]
+            window = np.gradient(window)
+            self.grad_score.append(np.sum(window**2))
+            if np.any(window < 0.01 * 2**self.bit_depth - 1):
+                self.under_saturated_points.append(True)
+            else:
+                self.under_saturated_points.append(False)
+        self.grad_score = np.array(self.grad_score)
+
     @staticmethod
     def load(file_name):
         with open(file_name, 'rb') as f:

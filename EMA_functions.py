@@ -18,15 +18,23 @@ def open_video(file_name, paths_to_check=['H:/My Drive/PHD/HSC', 'D:/HSC', 'F:/'
     Returns:
         pyidi.pyIDI: The pyIDI object representing the opened video file.
     """
+    file_path = None
     file_name_video = file_name + "_S01.cihx"
-    for root, dirs, files in os.walk(paths_to_check, topdown=False):
-        if file_name_video in files:
-            file_path = os.path.join(root, file_name_video)
-            print(file_path)
+    for folder_path in paths_to_check:
+        for root, dirs, files in os.walk(folder_path, topdown=False):
+            if file_name_video in files:
+                file_path = os.path.join(root, file_name_video)
+                print(file_path)
+                break
+        if file_path is not None:
             break
-    return pyidi.pyIDI(file_path)
+    if file_path is not None:
+        return pyidi.pyIDI(file_path)
+    else:
+        warn.warn('Video file not found. Check the file name and paths to check.')
+        return 
 
-def plot_still_frame(video, sequential_image_n):
+def plot_still_frame(video, sequential_image_n, show_saturation = False, bit_depth = 16):
     """
     Plots a still frame from the given video object.
 
@@ -37,6 +45,11 @@ def plot_still_frame(video, sequential_image_n):
     still_image = video.mraw[sequential_image_n]
     fig, ax = plt.subplots()
     ax.imshow(still_image, cmap='gray')
+    if show_saturation:
+        white_indices = np.where(still_image >= int(0.99*(2**bit_depth-1)))
+        black_indices = np.where(still_image <= int(0.01*(2**bit_depth-1)))
+        ax.plot(white_indices[1], white_indices[0], 'b.', alpha=0.2)
+        ax.plot(black_indices[1], black_indices[0], 'g.', alpha=0.2)
     plt.show()
 
 def gradient_check_LK(ref_imgs, bit_depth=16, lim=60000, scale=0.3):
