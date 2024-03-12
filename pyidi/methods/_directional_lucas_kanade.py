@@ -52,7 +52,7 @@ class LucasKanade_1D(IDIMethod):
         :param roi_size: (h, w) height and width of the region of interest.
             ROI dimensions should be odd numbers. Defaults to (9, 9)
         :type roi_size: tuple, list, optional
-        :param d: Assumed vibration direction. Must be |d|=1. d = (ex, ey), Defaults to (0, 1), i.e. (vertical direction)
+        :param d: Assumed vibration direction. Must be |d|=1. d = (ex, ey), Defaults to (0, 1)
         :type d: tuple, list, optional
         :param pad: size of padding around the region of interest in px, defaults to 2
         :type pad: int, optional
@@ -122,6 +122,8 @@ class LucasKanade_1D(IDIMethod):
         self.d = np.array(self.d)
         if np.linalg.norm(self.d) != 1:
             self.d = self.d/np.linalg.norm(self.d)
+            warnings.warn('The direction vector d must have a norm of 1. The input vector was normalized.')
+        self.dij = np.array([self.d[1], self.d[0]])
         self.ex = self.d[0]
         self.ey = self.d[1]
         self._set_mraw_range()
@@ -238,7 +240,7 @@ class LucasKanade_1D(IDIMethod):
                         F_spline=self.interpolation_splines[p], 
                         maxiter=self.max_nfev,
                         tol=self.tol,
-                        # d_subpixel_init = d_remainder
+                        d_subpixel_init = -d_remainder
                         )
 
                     self.displacements[p, ii, :] = displacements + d_init
@@ -282,7 +284,12 @@ class LucasKanade_1D(IDIMethod):
         G_float = G.astype(np.float64)
         Gx, Gy  = tools.get_gradient(G_float)
         Gd      = Gx*self.ex + Gy*self.ey
-        Gd2_inv = 1/np.sum(Gd)**2
+        Gd2     = np.sum(Gd)**2
+        if Gd2 == 0:
+            warnings.warn('Division by zero encountered in optimize_translations.')
+            Gd2_inv = 0
+        else: 
+            Gd2_inv = 1/Gd2
         G_float_clipped = G_float[1:-1, 1:-1]
 
         # initialize values
@@ -299,7 +306,7 @@ class LucasKanade_1D(IDIMethod):
             x_f += delta[1]
 
             F = F_spline(y_f, x_f)
-            delta, error = compute_delta_numba(F, G_float_clipped, Gd, Gd2_inv, d = self.d.T)
+            delta, error = compute_delta_numba(F, G_float_clipped, Gd, Gd2_inv, d = self.dij)
 
             displacement += delta
             if error < tol:
