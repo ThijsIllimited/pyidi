@@ -26,16 +26,17 @@ from .. import pyidi
 from .. import tools
 
 from .idi_method import IDIMethod
+import warnings
 
 
-class LucasKanade(IDIMethod):
+class LucasKanade_1D(IDIMethod):
     """
     Translation identification based on the Lucas-Kanade method using least-squares
     iterative optimization with the Zero Normalized Cross Correlation optimization
     criterium.
     """  
     def configure(
-        self, roi_size=(9, 9), pad=2, max_nfev=20, 
+        self, roi_size=(9, 9), d = (0,1), pad=2, max_nfev=20, 
         tol=1e-8, int_order=3, verbose=1, show_pbar=True, 
         processes=1, pbar_type='atpbar', multi_type='mantichora',
         resume_analysis=True, process_number=0, reference_image=0,
@@ -51,6 +52,8 @@ class LucasKanade(IDIMethod):
         :param roi_size: (h, w) height and width of the region of interest.
             ROI dimensions should be odd numbers. Defaults to (9, 9)
         :type roi_size: tuple, list, optional
+        :param d: Assumed vibration direction. Must be |d|=1. d = (ex, ey), Defaults to (0, 1), i.e. (vertical direction)
+        :type d: tuple, list, optional
         :param pad: size of padding around the region of interest in px, defaults to 2
         :type pad: int, optional
         :param max_nfev: maximum number of iterations in least-squares optimization, 
@@ -84,7 +87,8 @@ class LucasKanade(IDIMethod):
         :param use_numba: Use numba.njit for computation speedup. Currently not implemented.
         :type use_numba: bool
         """
-
+        if d is not None:
+            self.d = d
         if pad is not None:
             self.pad = pad
         if max_nfev is not None:
@@ -115,7 +119,11 @@ class LucasKanade(IDIMethod):
             self.mraw_range = mraw_range
         if use_numba is not None:
             self.use_numba = use_numba
-        
+        self.d = np.array(self.d)
+        if np.linalg.norm(self.d) != 1:
+            self.d = self.d/np.linalg.norm(self.d)
+        self.ex = self.d[0]
+        self.ey = self.d[1]
         self._set_mraw_range()
 
         self.temp_dir = os.path.join(self.video.root, 'temp_file')
@@ -220,6 +228,7 @@ class LucasKanade(IDIMethod):
                     
                     # start optimization with previous optimal parameter values
                     d_init = np.round(self.displacements[p, ii-1, :]).astype(int)
+                    d_remainder = self.displacements[p, ii-1, :] - d_init
 
                     yslice, xslice = self._padded_slice(point+d_init, self.roi_size, self.image_size, 1)
                     G = video.mraw[i, yslice, xslice]
@@ -229,7 +238,7 @@ class LucasKanade(IDIMethod):
                         F_spline=self.interpolation_splines[p], 
                         maxiter=self.max_nfev,
                         tol=self.tol,
-                        p=p
+                        # d_subpixel_init = d_remainder
                         )
 
                     self.displacements[p, ii, :] = displacements + d_init
@@ -250,7 +259,7 @@ class LucasKanade(IDIMethod):
                     print(f'Time to complete: {full_time:.1f} s')
 
 
-    def optimize_translations(self, G, F_spline, maxiter, tol, d_subpixel_init=(0, 0), p=0):
+    def optimize_translations(self, G, F_spline, maxiter, tol, d_subpixel_init=(0, 0)):
         """
         Determine the optimal translation parameters to align the current
         image subset `G` with the interpolated reference image subset `F`.
@@ -271,10 +280,10 @@ class LucasKanade(IDIMethod):
         :rtype: array of size 2
         """
         G_float = G.astype(np.float64)
-        Gx, Gy = tools.get_gradient(G_float)
+        Gx, Gy  = tools.get_gradient(G_float)
+        Gd      = Gx*self.ex + Gy*self.ey
+        Gd2_inv = 1/np.sum(Gd)**2
         G_float_clipped = G_float[1:-1, 1:-1]
-
-        A_inv = compute_inverse_numba(Gx, Gy, p)
 
         # initialize values
         error = 1.
@@ -290,7 +299,7 @@ class LucasKanade(IDIMethod):
             x_f += delta[1]
 
             F = F_spline(y_f, x_f)
-            delta, error = compute_delta_numba(F, G_float_clipped, Gx, Gy, A_inv)
+            delta, error = compute_delta_numba(F, G_float_clipped, Gd, Gd2_inv, d = self.d.T)
 
             displacement += delta
             if error < tol:
@@ -298,6 +307,7 @@ class LucasKanade(IDIMethod):
                 return -displacement # roles of F and G are switched
 
         # max_iter was reached before the convergence criterium
+        self.total_steps += _
         return -displacement
 
 
@@ -734,25 +744,60 @@ def worker(points, idi_kwargs, method_kwargs, i):
     
     return _video.get_displacements(verbose=0), i
 
-
 # @nb.njit
-def compute_inverse_numba(Gx, Gy, p=0):
-    Gx2 = np.sum(Gx**2)
-    Gy2 = np.sum(Gy**2)
-    GxGy = np.sum(Gx * Gy)
-    if (GxGy**2 - Gx2*Gy2) == 0:
-        print(f'Dividing by zero at index {p}.')
-        return np.array([[0, 0], [0, 0]])
-    A_inv = 1/(GxGy**2 - Gx2*Gy2) * np.array([[GxGy, -Gx2], [-Gy2, GxGy]])
-
-    return A_inv
-
-# @nb.njit
-def compute_delta_numba(F, G, Gx, Gy, A_inv):
+def compute_delta_numba(F, G, Gd, Gd2_inv, d):
     F_G = G - F
-    b = np.array([np.sum(Gx*F_G), np.sum(Gy*F_G)])
-    delta = np.dot(A_inv, b)
-
-    error = np.sqrt(np.sum(delta**2))
+    delta = d*np.sum(Gd*F_G)*Gd2_inv
+    error = np.linalg.norm(delta)
+    # error = np.sqrt(np.sum(delta**2))
     return delta, error
+
+# Old code from _lucas_kanade.py:
+# @nb.njit
+# def compute_inverse_numba(Gx, Gy):
+#     Gx2 = np.sum(Gx**2)
+#     Gy2 = np.sum(Gy**2)
+#     GxGy = np.sum(Gx * Gy)
+
+#     if GxGy**2 - Gx2*Gy2 == 0:
+#         warnings.warn("Division by zero encountered in compute_inverse_numba.")
+#         A_inv = np.zeros((2, 2))
+#     else:
+#         A_inv = 1/(GxGy**2 - Gx2*Gy2) * np.array([[GxGy, -Gx2], [-Gy2, GxGy]])
+
+#     return A_inv
+
+# def get_gradient(image):
+#     """Fast gradient computation.
+    
+#     Compute the gradient of image in both directions using central
+#     difference weights over 3 points.
+    
+#     !!! WARNING:
+#     The edges are excluded from the analysis and the returned image
+#     is smaller then original.
+
+#     :param image: 2d numpy array
+#     :return: gradient in x and y direction
+#     """
+#     im1 = image[2:]
+#     im2 = image[:-2]
+#     Gy = (im1 - im2)/2
+
+#     im1 = image[:, 2:]
+#     im2 = image[:, :-2]
+#     Gx = (im1 - im2)/2
+        
+#     return Gx[1:-1], Gy[:, 1:-1]
+
+# # @nb.njit
+# def compute_delta_numba(F, G, Gx, Gy, A_inv):
+#     F_G = G - F
+#     b = np.array([np.sum(Gx*F_G), np.sum(Gy*F_G)])
+#     delta = np.dot(A_inv, b)
+
+#     error = np.sqrt(np.sum(delta**2))
+#     return delta, error
+
+
 
