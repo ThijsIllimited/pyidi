@@ -121,6 +121,8 @@ class LucasKanade(IDIMethod):
         self.temp_dir = os.path.join(self.video.root, 'temp_file')
         self.settings_filename = os.path.join(self.temp_dir, 'settings.pkl')
         self.analysis_run = 0
+
+        self.total_steps = 0
         
 
     def _set_mraw_range(self):
@@ -292,6 +294,7 @@ class LucasKanade(IDIMethod):
 
             displacement += delta
             if error < tol:
+                self.total_steps += _
                 return -displacement # roles of F and G are switched
 
         # max_iter was reached before the convergence criterium

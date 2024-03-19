@@ -12,7 +12,7 @@ from magicgui import magicgui
 import warnings
 warnings.simplefilter("default")
 
-from .methods import IDIMethod, SimplifiedOpticalFlow, GradientBasedOpticalFlow, LucasKanadeSc, LucasKanade, LucasKanadeSc2, LargeDisplacementOpticalFlow
+from .methods import IDIMethod, SimplifiedOpticalFlow, GradientBasedOpticalFlow, LucasKanadeSc, LucasKanade, LucasKanadeSc2, LargeDisplacementOpticalFlow, LucasKanade_1D
 from . import tools
 from . import selection
 from . import gui
@@ -22,7 +22,8 @@ available_method_shortcuts = [
     ('ldof', LargeDisplacementOpticalFlow),
     ('lk', LucasKanade),
     ('lk_scipy', LucasKanadeSc),
-    ('lk_scipy2', LucasKanadeSc2)
+    ('lk_scipy2', LucasKanadeSc2),
+    ('lk_1D', LucasKanade_1D)
     # ('gb', GradientBasedOpticalFlow)
     ]
 
