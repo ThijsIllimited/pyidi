@@ -672,15 +672,17 @@ class EMA_Structure:
         self.Hv =  (S_fx / S_ff * S_xx / S_xf)**0.5
         return
     
-    def H_outliers(self, z_limit = 1., h_type = 'H1'):
+    def H_outliers(self, z_limit = 1., h_type = 'H1', f_range=(3, 50)):
         """
         Removes outliers from the transfer function.
         Args:
             H (np.array): The transfer function.
             z_limit (float): The threshold to use to remove outliers.
         """
+        f_start = self.freq_camera.searchsorted(f_range[0])
+        f_end = self.freq_camera.searchsorted(f_range[1])
         if h_type == 'H1':
-            z_scores = stats.zscore(self.H1, axis=0)
+            z_scores = stats.zscore(np.abs(self.H1[:, f_start:f_end]), axis=0)
         elif h_type == 'H2':
             z_scores = stats.zscore(self.H2, axis=0)
         elif h_type == 'Hv':
@@ -693,9 +695,9 @@ class EMA_Structure:
         self.exclude_high_amplitude = np.max(np.linalg.norm(self.d, axis=2),1)<d_lim
         return
     
-    def valid_tp(self, d_lim = 15, z_limit = 1., h_type = 'H1', d_min = None):
+    def valid_tp(self, d_lim = 15, z_limit = 1., h_type = 'H1', d_min = None, f_range=(3, 50)):
         self.exclude_tp(d_lim)
-        self.H_outliers(z_limit, h_type)
+        self.H_outliers(z_limit, h_type, f_range)
         self.valid_tps = self.exclude_high_amplitude & self.exclude_outliers
         if d_min is not None:
             self.valid_tps = self.valid_tps & (np.max(np.linalg.norm(self.d, axis=2),1) > d_min)

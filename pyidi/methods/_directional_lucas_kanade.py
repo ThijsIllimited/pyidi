@@ -120,6 +120,7 @@ class LucasKanade_1D(IDIMethod):
         if use_numba is not None:
             self.use_numba = use_numba
         self.d = np.array(self.d)
+        # self.d_correct_dict = {}
         if np.linalg.norm(self.d) != 1:
             self.d = self.d/np.linalg.norm(self.d)
             warnings.warn('The direction vector d must have a norm of 1. The input vector was normalized.')
@@ -242,7 +243,13 @@ class LucasKanade_1D(IDIMethod):
                         tol=self.tol,
                         d_subpixel_init = -d_remainder
                         )
-
+                    # if np.linalg.norm(displacements) > 1:
+                    #     warnings.warn(f'Point {p} at time {ii} has displacement norm greater than 1. Displacement: {displacements}')
+                    #     if p in self.d_correct_dict:
+                    #         self.d_correct_dict[p].append(ii)
+                    #     else:
+                    #         self.d_correct_dict[p] = [ii]
+                    #     displacements = np.array([0, 0])
                     self.displacements[p, ii, :] = displacements + d_init
 
                 # temp
@@ -684,6 +691,7 @@ def multi(video, processes):
     method_kwargs = {
         'roi_size': video.method.roi_size, 
         'pad': video.method.pad, 
+        'd': video.method.d,
         'max_nfev': video.method.max_nfev, 
         'tol': video.method.tol, 
         'verbose': video.method.verbose, 
@@ -745,7 +753,7 @@ def worker(points, idi_kwargs, method_kwargs, i):
     """
     method_kwargs['process_number'] = i+1
     _video = pyidi.pyIDI(**idi_kwargs)
-    _video.set_method(LucasKanade)
+    _video.set_method(LucasKanade_1D)
     _video.method.configure(**method_kwargs)
     _video.set_points(points)
     
@@ -758,53 +766,3 @@ def compute_delta_numba(F, G, Gd, Gd2_inv, d):
     error = np.linalg.norm(delta)
     # error = np.sqrt(np.sum(delta**2))
     return delta, error
-
-# Old code from _lucas_kanade.py:
-# @nb.njit
-# def compute_inverse_numba(Gx, Gy):
-#     Gx2 = np.sum(Gx**2)
-#     Gy2 = np.sum(Gy**2)
-#     GxGy = np.sum(Gx * Gy)
-
-#     if GxGy**2 - Gx2*Gy2 == 0:
-#         warnings.warn("Division by zero encountered in compute_inverse_numba.")
-#         A_inv = np.zeros((2, 2))
-#     else:
-#         A_inv = 1/(GxGy**2 - Gx2*Gy2) * np.array([[GxGy, -Gx2], [-Gy2, GxGy]])
-
-#     return A_inv
-
-# def get_gradient(image):
-#     """Fast gradient computation.
-    
-#     Compute the gradient of image in both directions using central
-#     difference weights over 3 points.
-    
-#     !!! WARNING:
-#     The edges are excluded from the analysis and the returned image
-#     is smaller then original.
-
-#     :param image: 2d numpy array
-#     :return: gradient in x and y direction
-#     """
-#     im1 = image[2:]
-#     im2 = image[:-2]
-#     Gy = (im1 - im2)/2
-
-#     im1 = image[:, 2:]
-#     im2 = image[:, :-2]
-#     Gx = (im1 - im2)/2
-        
-#     return Gx[1:-1], Gy[:, 1:-1]
-
-# # @nb.njit
-# def compute_delta_numba(F, G, Gx, Gy, A_inv):
-#     F_G = G - F
-#     b = np.array([np.sum(Gx*F_G), np.sum(Gy*F_G)])
-#     delta = np.dot(A_inv, b)
-
-#     error = np.sqrt(np.sum(delta**2))
-#     return delta, error
-
-
-
