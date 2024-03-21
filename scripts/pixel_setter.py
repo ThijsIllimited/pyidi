@@ -469,7 +469,7 @@ def play_video(video, frame_range, interval=30, points = None, axis = None, show
     
     fig, ax = plt.subplots()
     im = ax.imshow(video.mraw[frame_range[0]], cmap='gray')
-    text = ax.text(0.65, 0.05, '', transform=ax.transAxes, color='black', ha='right', va='bottom')
+    text = ax.text(0.65, 0.9, '', transform=ax.transAxes, color='black', ha='right', va='bottom')
     if axis is not None:
         ax.set_xlim(axis[0])
         ax.set_ylim(axis[1])
