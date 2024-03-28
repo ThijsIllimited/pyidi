@@ -15,7 +15,7 @@ class EMA_Structure:
     def __init__(self, file_name):
         self.file_name = file_name
         self.d = None
-        self.paths_to_check = [r'H:/My Drive/PHD/HSC', r'D:/HSC', r'F:/', r'E:/thijs/', r'C:/Users/thijs/Documents/HSC/', r'D:/thijsmas/HSC',r'D:/thijsmas/HSC - Ladisk']
+        self.paths_to_check = [r'H:/My Drive/PHD/HSC', r'D:/HSC', r'F:/', r'E:/thijs/', r'C:/Users/thijs/Documents/HSC/', r'D:/thijsmas/HSC',r'D:/thijsmas/HSC - Ladisk', r'D:/thijsmas']
         self.root_impact    = os.path.normpath(r'H:/My Drive/PHD/Data')
         self.root_simulations = r'G:/.shortcut-targets-by-id/1k1B8zPb3T8H7y6x0irFZnzzmfQPHMRPx/Illimited Lab Projects/Research Projects/Spiders/Simulations'
         self.root_disp      = r"C:/Users/thijsmas/Documents/GitHub/pyidi_data/displacements" #r"G:/.shortcut-targets-by-id/1k1B8zPb3T8H7y6x0irFZnzzmfQPHMRPx/Illimited Lab Projects/Research Projects/Spiders/Simulations/displacements"
@@ -517,6 +517,19 @@ class EMA_Structure:
             signal[:, :n_samples] = 0
         return signal
     
+    def zero_signal_after(self, signal, n_samples):
+        """
+        Zero the signal after the given number of samples.
+        Args:
+            signal (np.array): The signal to zero.
+            n_samples (int): The number of samples to zero the signal after.
+        """
+        if len(signal.shape) == 1:
+            signal[n_samples:] = 0
+        else:
+            signal[:, n_samples:] = 0
+        return signal
+
     def clip_signal_after(self, signal, first_zero_index):
         """
         Clip the signal after the given index.
