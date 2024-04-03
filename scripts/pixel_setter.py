@@ -453,6 +453,7 @@ class PixelSetter():
         return obj, (fig, ax)    
     
 def play_video(video, frame_range, interval=30, points = None, axis = None, show_saturation = False, bit_depth = 16, color = 'r', include_W = False, roi_size = (11,11)):
+    color_vec = ['r', 'g', 'b', 'c', 'm', 'y']
     def find_W(points_i):
         X = np.array([])
         Y = np.array([])
@@ -479,7 +480,13 @@ def play_video(video, frame_range, interval=30, points = None, axis = None, show
         under_sat = video.mraw[frame_range[0]] < int(0.01*(2**bit_depth-1))
         under_sat_plot = ax.plot(under_sat[1], under_sat[0], 'g.', alpha=0.2)
     if points is not None:
-        pts = ax.plot(points[:,0,1], points[:,0,0], '.', color=color)
+        if points.ndim == 2:
+            pts = ax.plot(points[:,1], points[:,0], '.', color=color)
+        elif points.ndim == 3:
+            pts = ax.plot(points[:,0,1], points[:,0,0], '.', color=color)
+        elif points.ndim == 4:
+            for col_i, point_set in enumerate(points):
+                pts = ax.plot(point_set[:,0,1], point_set[:,0,0], '.', color=color_vec[col_i%len(color_vec)])
     if include_W:
         X, Y = find_W(points[:,0,:])
         W_plot, = ax.plot(X, Y, 'r-')

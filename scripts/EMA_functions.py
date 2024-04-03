@@ -129,7 +129,7 @@ class EMA_Structure:
         with open(self.path_EMA, 'rb') as f:
             self.cam = pkl.load(f)
 
-    def plot_still_frame(self, video, sequential_image_n, show_saturation = False, bit_depth = 16, tp_nut = False, tp = False, valid_only = False):
+    def plot_still_frame(self, video, sequential_image_n, show_saturation = False, bit_depth = 16, tp_nut = False, tp = False, valid_only = False , labels = None):
         """
         Plots a still frame from the given video object.
 
@@ -137,6 +137,7 @@ class EMA_Structure:
             video (pyidi.pyIDI): The pyIDI object representing the video.
             sequential_image_n (int or tuple): The index or range of sequential images to plot.
         """
+        markers = ['o', 'v', '^', '<', '>', '.', 'p', '*', 'h', 'H', '+', 'x', 'D', 'd', '|', '_', 's']
         if isinstance(sequential_image_n, tuple):
             still_image = np.mean(video.mraw[sequential_image_n[0]:sequential_image_n[1]], axis=0)
             self.mean_image = still_image
@@ -154,11 +155,19 @@ class EMA_Structure:
             ax.plot(black_indices[1], black_indices[0], 'g.', alpha=0.2)
         if tp_nut:
             ax.plot(self.tp[self.nearest_nut_index,1], self.tp[self.nearest_nut_index,0], 'r*')
-        if tp:
-            if valid_only:
-                ax.plot(self.tp[self.exclude_high_amplitude,1], self.tp[self.exclude_high_amplitude,0], 'r.')
+        if isinstance(tp, np.ndarray):
+            if tp.ndim == 2:
+                ax.plot(tp[:, 1], tp[:,0], 'r*')
+            elif tp.ndim == 3:
+                for i, row in enumerate(tp):
+                    ax.plot(row[:, 1], row[:, 0], label = labels[i], linestyle = 'None', marker = markers[i % len(markers)])
+                ax.legend()
             else:
-                ax.plot(self.tp[:,1], self.tp[:,0], 'r.')
+                if tp:
+                    if valid_only:
+                        ax.plot(self.tp[self.exclude_high_amplitude,1], self.tp[self.exclude_high_amplitude,0], 'r.')
+                    else:
+                        ax.plot(self.tp[:,1], self.tp[:,0], 'r.')
         plt.show()
         return fig, ax
 
@@ -178,6 +187,8 @@ class EMA_Structure:
             return X, Y
         
         fig, ax = plt.subplots()
+        ax.set_xticks([])
+        ax.set_yticks([])
         im = ax.imshow(video.mraw[frame_range[0]], cmap='gray')
         text = ax.text(0.65, 0.05, '', transform=ax.transAxes, color='black', ha='right', va='bottom')
         if axis is not None:

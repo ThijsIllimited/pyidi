@@ -3,8 +3,21 @@ from numba import jit
 from matplotlib import pyplot as plt
 from scipy.ndimage import generic_filter, maximum_filter
 from skimage.transform import resize
+from matplotlib import animation
 
 class FeatureSelecter():
+    """ Class to select features from an image using different filters.
+    eig0: The smallest eigenvalue of the structure tensor.
+    eig1: The largest eigenvalue of the structure tensor.
+    harris: The Harris corner response function.
+    trigs: The Triggs corner response function.
+    harmonic_mean: The harmonic mean of the eigenvalues of the structure tensor.
+    eig_theta: The eigenvalue of the structure tensor in the direction of theta. (1D DIC only)
+    eig_theta_off: The eigenvalue of the structure tensor in the direction of theta + 90 degrees. (1D DIC only)
+
+    Args:
+        image (ndarray): The image to select features from.
+    """
     def __init__(self, image) -> None:
         self.filter_method = 'eig0'
         self.filter = self.eig0_filter
@@ -241,6 +254,34 @@ class FeatureSelecter():
         print(f'Added {s} points with a minimum radius of {self.radius}')
         return picked_points
 
+    def pick_max_loop(self, score_image = None, min_distance = 5, n_points = 100, minimum_score = 1):
+        if self.score_image is None and score_image is None:
+            print('Apply a filter first')
+            return
+        if score_image is None:
+            score_image = self.score_image
+        if type(min_distance) == int or type(min_distance) == float:
+            min_distance = (min_distance, min_distance)
+        # qi, qj = (min_distance[0]//2), (min_distance[1]//2)
+        qi, qj = (min_distance[0]-1), (min_distance[1]-1)
+        si_flat = score_image.flatten()
+        score_order = np.argsort(si_flat)[::-1]
+        first_low_score = np.argmax(si_flat[score_order] < minimum_score)
+        score_order = score_order[:first_low_score]
+        placed_points = np.zeros_like(score_image, dtype=bool)
+        self.maxima = []
+        for point in score_order:
+            y, x = np.unravel_index(point, score_image.shape)
+            if placed_points[y - qi: y + qi+1, x - qj: x + qj+1].any():
+                continue
+            placed_points[y, x] = True
+            self.maxima.append([y, x])
+            if len(self.maxima) > n_points:
+                self.maxima = np.array(self.maxima[:n_points])
+                break
+        self.maxima = np.array(self.maxima)
+        return self.maxima
+
     #### Filter methods
     @staticmethod
     @jit(nopython=True)
@@ -359,10 +400,4 @@ class FeatureSelecter():
             return np.nan
         ATAinv = 1/denom * np.array([[IyIy, -IxIy], [-IxIy, IxIx]])
         Vx, Vy = -ATAinv @ np.array([IxIt, IyIt])
-        return Vy
-    
-    @staticmethod
-    @jit(nopython=True)
-    def I_filter(pixel_list):
-        
         return Vy
