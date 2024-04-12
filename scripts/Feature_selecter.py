@@ -401,3 +401,9 @@ class FeatureSelecter():
         ATAinv = 1/denom * np.array([[IyIy, -IxIy], [-IxIy, IxIx]])
         Vx, Vy = -ATAinv @ np.array([IxIt, IyIt])
         return Vy
+    
+    def Directional_smoothing(self, image, roi_size, angle = 0):
+        roi_size_i = np.ceil(np.cos(np.radians(self.theta)) * roi_size[0] + np.sin(np.radians(self.theta)) * roi_size[1]).astype(int)
+        roi_size_j = np.ceil(np.cos(np.radians(self.theta)) * roi_size[1] + np.sin(np.radians(self.theta)) * roi_size[0]).astype(int)
+        kernal = np.zeros((roi_size_i, roi_size_j))
+        

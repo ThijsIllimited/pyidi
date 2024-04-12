@@ -36,7 +36,7 @@ class LucasKanade_1D(IDIMethod):
     criterium.
     """  
     def configure(
-        self, roi_size=(9, 9), d = (0,1), pad=2, max_nfev=20, 
+        self, roi_size=(9, 9), smoothing_size = (1,1), dyx = (1,0), pad=(2,2), max_nfev=20, 
         tol=1e-8, int_order=3, verbose=1, show_pbar=True, 
         processes=1, pbar_type='atpbar', multi_type='mantichora',
         resume_analysis=True, process_number=0, reference_image=0,
@@ -52,8 +52,8 @@ class LucasKanade_1D(IDIMethod):
         :param roi_size: (h, w) height and width of the region of interest.
             ROI dimensions should be odd numbers. Defaults to (9, 9)
         :type roi_size: tuple, list, optional
-        :param d: Assumed vibration direction. Must be |d|=1. d = (ex, ey), Defaults to (0, 1)
-        :type d: tuple, list, optional
+        :param dyx: Assumed vibration direction. Must be |d|=1. Convention is 'negative down, positive right'.
+        :type dyx: tuple, list, optional
         :param pad: size of padding around the region of interest in px, defaults to 2
         :type pad: int, optional
         :param max_nfev: maximum number of iterations in least-squares optimization, 
@@ -87,8 +87,6 @@ class LucasKanade_1D(IDIMethod):
         :param use_numba: Use numba.njit for computation speedup. Currently not implemented.
         :type use_numba: bool
         """
-        if d is not None:
-            self.d = d
         if pad is not None:
             self.pad = pad
         if max_nfev is not None:
@@ -119,20 +117,26 @@ class LucasKanade_1D(IDIMethod):
             self.mraw_range = mraw_range
         if use_numba is not None:
             self.use_numba = use_numba
-        self.d = np.array(self.d)
-        # self.d_correct_dict = {}
-        if np.linalg.norm(self.d) != 1:
-            self.d = self.d/np.linalg.norm(self.d)
-            warnings.warn('The direction vector d must have a norm of 1. The input vector was normalized.')
-        self.dij = np.array([self.d[1], self.d[0]])
-        self.ex = self.d[0]
-        self.ey = self.d[1]
+        if dyx is not None:
+            self.dyx = np.array(dyx)
+            if np.linalg.norm(self.dyx) != 1:
+                self.dyx = self.dyx/np.linalg.norm(self.dyx)
+                warnings.warn('The direction vector d must have a norm of 1. The input vector was normalized.')
+        if smoothing_size is not None:
+            self.smoothing_size = np.array(smoothing_size).astype(int)
+            if smoothing_size[0] % 2 == 0:
+                warnings.warn('Subset size must be an odd number. Subset size was reduces by 1.')
+                self.smoothing_size[0] -= 1
+            if smoothing_size[1] % 2 == 0:
+                warnings.warn('Subset size must be an odd number. Subset size was reduces by 1.')
+                self.smoothing_size[1] -= 1
+            self.q = ((self.smoothing_size - 1)/2).astype(int)
+            self.smoothing = not np.all(self.smoothing_size == 1)      
         self._set_mraw_range()
 
         self.temp_dir = os.path.join(self.video.root, 'temp_file')
         self.settings_filename = os.path.join(self.temp_dir, 'settings.pkl')
         self.analysis_run = 0
-
         self.total_steps = 0
         
 
@@ -233,23 +237,21 @@ class LucasKanade_1D(IDIMethod):
                     d_init = np.round(self.displacements[p, ii-1, :]).astype(int)
                     d_remainder = self.displacements[p, ii-1, :] - d_init
 
-                    yslice, xslice = self._padded_slice(point+d_init, self.roi_size, self.image_size, 1)
-                    G = video.mraw[i, yslice, xslice]
+                    yslice, xslice = self._padded_slice(point+d_init, self.roi_size, self.image_size, 1 + self.q)
+                    G = video.mraw[i, yslice, xslice].astype(np.float64)
+
+                    if self.smoothing:
+                        G = self.subset(G, self.q)
+                        G = G[self.q[0]:-self.q[0], self.q[1]:-self.q[1]]
 
                     displacements = self.optimize_translations(
                         G=G, 
                         F_spline=self.interpolation_splines[p], 
                         maxiter=self.max_nfev,
                         tol=self.tol,
+                        dyx = self.dyx,
                         d_subpixel_init = -d_remainder
                         )
-                    # if np.linalg.norm(displacements) > 1:
-                    #     warnings.warn(f'Point {p} at time {ii} has displacement norm greater than 1. Displacement: {displacements}')
-                    #     if p in self.d_correct_dict:
-                    #         self.d_correct_dict[p].append(ii)
-                    #     else:
-                    #         self.d_correct_dict[p] = [ii]
-                    #     displacements = np.array([0, 0])
                     self.displacements[p, ii, :] = displacements + d_init
 
                 # temp
@@ -268,12 +270,12 @@ class LucasKanade_1D(IDIMethod):
                     print(f'Time to complete: {full_time:.1f} s')
 
 
-    def optimize_translations(self, G, F_spline, maxiter, tol, d_subpixel_init=(0, 0)):
+    def optimize_translations(self, G, F_spline, maxiter, tol, dyx, d_subpixel_init=(0, 0)):
         """
         Determine the optimal translation parameters to align the current
         image subset `G` with the interpolated reference image subset `F`.
         
-        :param G: the current image subset.
+        :param G: the current image subset. (G already is of type float64)
         :type G: array of shape `roi_size`
         :param F_spline: interpolated referencee image subset
         :type F_spline: scipy.interpolate.RectBivariateSpline
@@ -288,16 +290,15 @@ class LucasKanade_1D(IDIMethod):
             image, relative to the position of input subset `G`.
         :rtype: array of size 2
         """
-        G_float = G.astype(np.float64)
-        Gx, Gy  = tools.get_gradient(G_float)
-        Gd      = Gx*self.ex + Gy*self.ey
-        Gd2     = np.sum(Gd)**2
+        Gx, Gy  = tools.get_gradient(G) #(Gj, Gi)
+        Gd      = Gx*dyx[1] + Gy*dyx[0]
+        Gd2     = np.sum(Gd**2)
         if Gd2 == 0:
             warnings.warn('Division by zero encountered in optimize_translations.')
             Gd2_inv = 0
         else: 
             Gd2_inv = 1/Gd2
-        G_float_clipped = G_float[1:-1, 1:-1]
+        G_clipped = G[1:-1, 1:-1]
 
         # initialize values
         error = 1.
@@ -313,7 +314,7 @@ class LucasKanade_1D(IDIMethod):
             x_f += delta[1]
 
             F = F_spline(y_f, x_f)
-            delta, error = compute_delta_numba(F, G_float_clipped, Gd, Gd2_inv, d = self.dij)
+            delta, error = compute_delta_numba(F, G_clipped, Gd, Gd2_inv, dyx = dyx)
 
             displacement += delta
             if error < tol:
@@ -349,16 +350,16 @@ class LucasKanade_1D(IDIMethod):
         h, w = np.array(roi_size).astype(int)
 
         # Bounds checking
-        y = np.clip(y_, h//2+pad, image_shape[0]-(h//2+pad+1))
-        x = np.clip(x_, w//2+pad, image_shape[1]-(w//2+pad+1))
+        y = np.clip(y_, h//2+pad[0], image_shape[0]-(h//2+pad[0]+1))
+        x = np.clip(x_, w//2+pad[1], image_shape[1]-(w//2+pad[1]+1))
 
         if x != x_ or y != y_:
             warnings.warn('Reached image edge. The displacement optimization ' +
                 'algorithm may not converge, or selected points might be too close ' + 
                 'to image border. Please check analysis settings.')
 
-        yslice = slice(y-h//2-pad, y+h//2+pad+1)
-        xslice = slice(x-w//2-pad, x+w//2+pad+1)
+        yslice = slice(y-h//2-pad[0], y+h//2+pad[0]+1)
+        xslice = slice(x-w//2-pad[1], x+w//2+pad[1]+1)
         return yslice, xslice
 
 
@@ -392,7 +393,24 @@ class LucasKanade_1D(IDIMethod):
             raise Exception('reference_image must be index of frame, tuple (slice) or ndarray.')
         
         return ref
+    def subset(self, data, q):
+        """Calculating a filtered image.
 
+        Calculates a filtered image with subset of 2q[0]+1 x 2q[1]+1 (or d x d). It sums its area.
+
+        :param data: Image that is to be filtered.
+        :param q: Size of the subset is 2q[0]+1 x 2q[1]+1.
+        :return: Filtered image.
+        """
+        subset_image = []
+
+        for i in range(-q[0], q[0] + 1):
+            for j in range(-q[1], q[1] + 1):
+                subset_roll = np.roll(data, i, axis=0)
+                subset_roll = np.roll(subset_roll, j, axis=1)
+                subset_image.append(subset_roll)
+
+        return np.sum(np.asarray(subset_image), axis=0)
 
     def _interpolate_reference(self, video):
         """
@@ -409,12 +427,17 @@ class LucasKanade_1D(IDIMethod):
         f = self._set_reference_image(video, self.reference_image)
         splines = []
         for point in video.points:
-            yslice, xslice = self._padded_slice(point, self.roi_size, self.image_size, pad)
+            yslice, xslice = self._padded_slice(point, self.roi_size, self.image_size, pad + self.q)
+
+            img_subset = f[yslice, xslice]
+            if self.smoothing:
+                img_subset = self.subset(img_subset, self.q)
+                img_subset = img_subset[self.q[0]:-self.q[0], self.q[1]:-self.q[1]]
 
             spl = RectBivariateSpline(
-               x=np.arange(-pad, self.roi_size[0]+pad),
-               y=np.arange(-pad, self.roi_size[1]+pad),
-               z=f[yslice, xslice],
+               x=np.arange(-pad[1], self.roi_size[0]+pad[1]),
+               y=np.arange(-pad[0], self.roi_size[1]+pad[0]),
+               z=img_subset,
                kx=self.int_order,
                ky=self.int_order,
                s=0
@@ -612,6 +635,8 @@ class LucasKanade_1D(IDIMethod):
         """
         INCLUDE_KEYS = [
             '_roi_size',
+            'dyx',
+            'smoothing_size'
             'pad',
             'max_nfev',
             'tol',
@@ -691,7 +716,8 @@ def multi(video, processes):
     method_kwargs = {
         'roi_size': video.method.roi_size, 
         'pad': video.method.pad, 
-        'd': video.method.d,
+        'dyx': video.method.dyx,
+        'smoothing_size': video.method.smoothing_size,
         'max_nfev': video.method.max_nfev, 
         'tol': video.method.tol, 
         'verbose': video.method.verbose, 
@@ -760,9 +786,16 @@ def worker(points, idi_kwargs, method_kwargs, i):
     return _video.get_displacements(verbose=0), i
 
 # @nb.njit
-def compute_delta_numba(F, G, Gd, Gd2_inv, d):
+def compute_delta_numba(F, G, Gd, Gd2_inv, dyx):
     F_G = G - F
-    delta = d*np.sum(Gd*F_G)*Gd2_inv
+    delta = dyx*np.sum(Gd*F_G)*Gd2_inv
     error = np.linalg.norm(delta)
     # error = np.sqrt(np.sum(delta**2))
     return delta, error
+
+# def compute_delta_numba(F, G, Gd, Gd2_inv, dyx):
+    # F_G = G - F
+    # lam = np.sum(Gd*F_G)*Gd2_inv
+    # delta = dyx*lam
+    # error = np.abs(lam)
+    # return delta, error
