@@ -14,6 +14,9 @@ class DIC_Structure(FeatureSelecter, pyidi.pyIDI):
         self.file_root = os.path.dirname(file_path)
         self.file_path = file_path
         self.file_name = os.path.basename(file_path)
+        self.base_name = self.file_name.split('.')[0]
+        if self.base_name[-4:-2] == '_S':
+            self.base_name = self.base_name[:-4]
         self.video = pyidi.pyIDI(file_path)
         self.feature_selecter = FeatureSelecter(self.video.mraw[0])
 
@@ -141,7 +144,30 @@ class DIC_Structure(FeatureSelecter, pyidi.pyIDI):
             # self.settings = f.read().decode('utf-8')
         return self.points, self.d, self.settings
     
-    def list_test_data(self, max_d = 10, max_dd = 1, test_range = range(1,10)):
+    def open_impact_data(self, root_impact):
+        files = os.listdir(root_impact)
+        for file in files:
+            if self.base_name in file[16:-4]:
+                path = os.path.join(root_impact, file)
+                with open(path, 'rb') as f:
+                    self.impact_data = pkl.load(f)
+                break
+        else:
+            print(f"{self.base_name} is not in files")
+            return
+
+    def load_settings(self, test_number = 0):
+        """
+        Opens the results file and loads the data into the object.
+        Args:
+            path (str): The path to the results file.
+        """
+        previous_files_root = os.path.join(self.file_root, self.file_name.split('.')[0] + '_pyidi_analysis', f'analysis_{str(test_number).zfill(3)}')
+        with open(os.path.join(previous_files_root, 'settings.txt'), 'rb') as f:
+            self.settings = js.load(f)
+        return self.settings
+    
+    def list_test_data(self, test_range = range(1,10), max_d = 10, max_dd = 1, max_drift = False, d_min=False, robostness_check = True):
         """
         Lists the test data in the results directory.
         Args:
@@ -149,13 +175,30 @@ class DIC_Structure(FeatureSelecter, pyidi.pyIDI):
             max_dd (float): The maximum second derivative of the displacement to consider a point as tracked.
             test_range (range): The range of test numbers to consider.
         """
-        df = {'cih_file':[], 'test_number':[], 'createdate':[], 'method':[], 'roi_size':[], 'n_points':[], 'n_tracked_points':[], 'success_rate': [], 'dxy':[], 'smoothing_size':[]}
+        df = {'cih_file':[], 'test_number':[], 'createdate':[], 'method':[], 'roi_size':[], 'n_points':[], 'n_tracked_points':[], 'success_rate': [], 'dyx':[], 'smoothing_size':[]}
         for test_number in test_range:
-            points, d, settings = self.load_results(test_number=test_number)
-            td = d +  points.reshape(len(points),1,2)
-
-            mask = ((np.max(np.linalg.norm(d, axis=2), axis = 1) < max_d)) & (np.max(np.linalg.norm(np.diff(d, axis = 1), axis=2), axis = 1) < max_dd)
-            n_tracked_points = np.sum(mask)
+            if robostness_check:
+                points, d, settings = self.load_results(test_number=test_number)
+                td = d +  points.reshape(len(points),1,2)
+                mask = np.ones(len(points), dtype=bool)
+                if max_d:
+                    mask = mask & ((np.max(np.linalg.norm(d, axis=2), axis = 1) < max_d))
+                if max_dd:
+                    mask = mask & (np.max(np.linalg.norm(np.diff(d, axis = 1), axis=2), axis = 1) < max_dd)
+                if max_drift:
+                    mask = mask & np.abs(np.mean(np.linalg.norm(d[:,:-100], axis=2), axis=1) < max_drift)
+                if d_min:
+                    mask = mask & np.max(np.linalg.norm(d, axis=2), axis = 1) > d_min
+                
+                n_tracked_points = np.sum(mask)
+                df['n_tracked_points'].append(n_tracked_points)
+                df['n_points'].append(len(points))
+                df['success_rate'].append(n_tracked_points/len(points))
+            else:
+                settings = self.load_settings(test_number=test_number)
+                df['n_tracked_points'].append(None)
+                df['n_points'].append(None)
+                df['success_rate'].append(None)
 
             cih_file    = settings['cih_file']
             createdate  = settings['createdate']
@@ -173,19 +216,18 @@ class DIC_Structure(FeatureSelecter, pyidi.pyIDI):
                 smoothing_size = None
             try:
                 polygon = np.array(self.info['Polygon'])
-                dxy = np.array(self.info['Direction'])
             except:
                 polygon = None
-                dxy = None
+            try:
+                dyx = np.array(DIC_settings['dyx'])
+            except:
+                dyx = None
             df['cih_file'].append(cih_file)
             df['test_number'].append(test_number)
             df['createdate'].append(createdate)
             df['method'].append(method)
             df['roi_size'].append(roi_size)
-            df['n_points'].append(len(points))
-            df['n_tracked_points'].append(n_tracked_points)
-            df['success_rate'].append(n_tracked_points/len(points))
-            df['dxy'].append(dxy)
+            df['dyx'].append(dyx)
             df['smoothing_size'].append(smoothing_size)
         return pd.DataFrame(df)
     

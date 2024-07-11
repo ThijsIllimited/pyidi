@@ -186,7 +186,7 @@ class EMA_Structure:
                 Y = np.hstack((Y, np.array([y0, y0, y1, y1, y0, np.nan])))
             return X, Y
         
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(12, 5))
         ax.set_xticks([])
         ax.set_yticks([])
         im = ax.imshow(video.mraw[frame_range[0]], cmap='gray')
@@ -446,6 +446,9 @@ class EMA_Structure:
         elif idx == 'all' and dir == 'x':
             self.displacements_raw =  self.d[:, :, 1]
             return 
+        elif idx == 'all' and dir == 'xy':
+            self.displacements_raw =  self.d[:, :, :]
+            return
         if dir == 'y':
             self.displacements_raw =  self.d[:, idx, 0, np.newaxis] if len(idx) > 0 else self.d[:, idx, 0]
         elif dir == 'x':
@@ -646,17 +649,23 @@ class EMA_Structure:
     
     def set_freq_properties(self, padding_ratio = 1):
         self.n_d, self.freq_camera  = self._define_frequency_spectrum(self.t_camera, self.fs_camera, padding_ratio)
-        self.disp_fft               = self._FFT_on_signal(self.displacements, self.n_d)
+        # self.disp_fft               = self._FFT_on_signal(self.displacements, self.n_d)
+        self.disp_fft_x               = self._FFT_on_signal(self.displacements_x, self.n_d)
+        self.disp_fft_y               = self._FFT_on_signal(self.displacements_y, self.n_d)
         
         self.n_f, self.freq_force   = self._define_frequency_spectrum(self.t_force, self.fs_force, padding_ratio)
         self.force_fft              = self._FFT_on_signal(self.force, self.n_f)
 
         n_freq = len(self.freq_camera)
         self.freq_force = self.freq_force[:n_freq]
-        self.disp_fft[1:] *= 2
+        # self.disp_fft[1:] *= 2
+        self.disp_fft_x[1:] *= 2
+        self.disp_fft_y[1:] *= 2
         self.force_fft[1:] *= 2
 
-        self.disp_fft = self.disp_fft[:,:n_freq]
+        # self.disp_fft = self.disp_fft[:,:n_freq]
+        self.disp_fft_x = self.disp_fft_x[:,:n_freq]
+        self.disp_fft_y = self.disp_fft_y[:,:n_freq]
         self.force_fft = self.force_fft[:n_freq]
         return
     
@@ -677,7 +686,7 @@ class EMA_Structure:
             n_d = len(signal)
         return np.fft.rfft(signal, n=n_d) / n_d
 
-    def get_transfer_function(self):
+    def get_transfer_function(self, direction = 'y'):
         """
         Find transfer function between force and displacement
         Args:
@@ -687,10 +696,16 @@ class EMA_Structure:
             type (str): The type of transfer function to calculate.
         """
         Acquisition_period  = self.t_camera[-1]
-        S_xx = 1/Acquisition_period * np.conj(self.disp_fft) * self.disp_fft
-        S_ff = 1/Acquisition_period * np.conj(self.force_fft) * self.force_fft
-        S_xf = 1/Acquisition_period * np.conj(self.disp_fft) * self.force_fft
-        S_fx = 1/Acquisition_period * np.conj(self.force_fft) * self.disp_fft
+        if direction == 'y':
+            S_xx = 1/Acquisition_period * np.conj(self.disp_fft_y) * self.disp_fft_y
+            S_ff = 1/Acquisition_period * np.conj(self.force_fft) * self.force_fft
+            S_xf = 1/Acquisition_period * np.conj(self.disp_fft_y) * self.force_fft
+            S_fx = 1/Acquisition_period * np.conj(self.force_fft) * self.disp_fft_y
+        elif direction == 'x':
+            S_xx = 1/Acquisition_period * np.conj(self.disp_fft_x) * self.disp_fft_x
+            S_ff = 1/Acquisition_period * np.conj(self.force_fft) * self.force_fft
+            S_xf = 1/Acquisition_period * np.conj(self.disp_fft_x) * self.force_fft
+            S_fx = 1/Acquisition_period * np.conj(self.force_fft) * self.disp_fft_x
         self.H1 = S_fx / S_ff
         self.H2 =  S_xx / S_xf
         self.Hv =  (S_fx / S_ff * S_xx / S_xf)**0.5

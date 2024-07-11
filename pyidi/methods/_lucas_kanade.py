@@ -223,7 +223,10 @@ class LucasKanade(IDIMethod):
 
                     yslice, xslice = self._padded_slice(point+d_init, self.roi_size, self.image_size, 1)
                     G = video.mraw[i, yslice, xslice]
-
+                    if not np.any(G):
+                        self.warnings.append(f'No data in the ROI at time point {i}.')
+                        self.displacements[p, ii, :] = self.displacements[p, ii-1, :]
+                        break
                     displacements = self.optimize_translations(
                         G=G, 
                         F_spline=self.interpolation_splines[p], 
@@ -298,6 +301,7 @@ class LucasKanade(IDIMethod):
                 return -displacement # roles of F and G are switched
 
         # max_iter was reached before the convergence criterium
+        self.total_steps += _
         return -displacement
 
 
