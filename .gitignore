@@ -119,8 +119,12 @@ dmypy.json
 .pyre/
 
 /data/*.pkl
+<<<<<<< Updated upstream
 
 #other
 server_user_id.txt
 
 /temp
+=======
+/scripts
+>>>>>>> Stashed changes
