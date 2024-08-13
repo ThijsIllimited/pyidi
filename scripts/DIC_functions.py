@@ -177,6 +177,10 @@ class DIC_Structure(FeatureSelecter, pyidi.pyIDI):
         """
         df = {'cih_file':[], 'test_number':[], 'createdate':[], 'method':[], 'roi_size':[], 'n_points':[], 'n_tracked_points':[], 'success_rate': [], 'dyx':[], 'smoothing_size':[]}
         for test_number in test_range:
+            try:
+                settings = self.load_settings(test_number=test_number)
+            except:
+                break
             if robostness_check:
                 points, d, settings = self.load_results(test_number=test_number)
                 td = d +  points.reshape(len(points),1,2)

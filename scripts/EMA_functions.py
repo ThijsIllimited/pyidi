@@ -10,12 +10,18 @@ import pickle as pkl
 from scipy.spatial.distance import cdist
 import pandas as pd
 import matplotlib.animation as animation
+import re
 
 class EMA_Structure:
     def __init__(self, file_name):
         self.file_name = file_name
+        pattern = r'_S\d+\.cihx$'
+        if re.search(pattern, self.file_name):
+            self.file_name_base = re.sub(pattern, '', self.file_name)
+        else:
+            self.file_name_base = self.file_name
         self.d = None
-        self.paths_to_check = [r'H:/My Drive/PHD/HSC', r'D:/HSC', r'F:/', r'E:/thijs/', r'C:/Users/thijs/Documents/HSC/', r'D:/thijsmas/HSC',r'D:/thijsmas/HSC - Ladisk', r'D:/thijsmas']
+        self.paths_to_check = [r'D:/HSC', r'F:/', r'E:/thijs/', r'C:/Users/thijs/Documents/HSC/', r'D:/thijsmas/HSC',r'D:/thijsmas/HSC - Ladisk', r'D:/thijsmas', r'H:/My Drive/PHD/HSC',]
         self.root_impact    = os.path.normpath(r'H:/My Drive/PHD/Data')
         self.root_simulations = r'G:/.shortcut-targets-by-id/1k1B8zPb3T8H7y6x0irFZnzzmfQPHMRPx/Illimited Lab Projects/Research Projects/Spiders/Simulations'
         self.root_disp      = r"C:/Users/thijsmas/Documents/GitHub/pyidi_data/displacements" #r"G:/.shortcut-targets-by-id/1k1B8zPb3T8H7y6x0irFZnzzmfQPHMRPx/Illimited Lab Projects/Research Projects/Spiders/Simulations/displacements"
@@ -52,6 +58,7 @@ class EMA_Structure:
         for folder_path in self.paths_to_check:
             for root, dirs, files in os.walk(folder_path, topdown=False):
                 if self.file_name_video in files:
+                    self.file_root = root
                     self.file_path = os.path.join(root, self.file_name_video)
                     print(self.file_path)
                     break
@@ -93,13 +100,13 @@ class EMA_Structure:
     def open_impact_data(self):
         files = os.listdir(self.root_impact)
         for file in files:
-            if self.file_name in file[16:-4]:
+            if self.file_name_base in file[16:-4]:
                 path = os.path.join(self.root_impact, file)
                 with open(path, 'rb') as f:
                     self.impact_data = pkl.load(f)
                 break
         else:
-            print(f"{self.file_name} is not in files")
+            print(f"{self.file_name_base} is not in files")
             return
 
     def open_displacements(self, roi_size=None, reference_image=None, auto_nut_idx=True):

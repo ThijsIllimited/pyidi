@@ -282,22 +282,6 @@ class FeatureSelecter():
         self.maxima = np.array(self.maxima)
         return self.maxima
 
-    def pick_max_loop(self, S, g, n):
-        si_flat = S.flatten()
-        score_order = np.argsort(si_flat)[::-1]
-        P = np.zeros_like(S, dtype=bool)
-        features = []
-        for point in score_order:
-            y, x = np.unravel_index(point, S.shape)
-            if P[y - g: y + g+1, x - g: x + g+1].any():
-                continue
-            P[y, x] = True
-            features.append([y, x])
-            if len(features) > n:
-                features = np.array(features[:n])
-                break
-        return features
-
     #### Filter methods
     @staticmethod
     @jit(nopython=True)
