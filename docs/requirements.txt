@@ -1,0 +1,3 @@
+pyidi
+sphinx-book-theme
+sphinx-copybutton

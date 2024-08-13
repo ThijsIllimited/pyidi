@@ -14,8 +14,9 @@ Welcome to pyIDI's documentation!
    quick_start/points_selection
    quick_start/napari
    quick_start/disp_id_methods
-   contributing/documenting
+   mode_shape_magnification
    code/modules
+   contributing/documenting
 
 
 
