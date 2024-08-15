@@ -175,10 +175,11 @@ class EMA_Structure:
                         ax.plot(self.tp[self.exclude_high_amplitude,1], self.tp[self.exclude_high_amplitude,0], 'r.')
                     else:
                         ax.plot(self.tp[:,1], self.tp[:,0], 'r.')
+        plt.ion()
         plt.show()
         return fig, ax
 
-    def play_video(self, video, frame_range, interval=30, points = None, axis = None, show_saturation = False, bit_depth = 16, color = 'r', include_W = False, roi_size = (11,11)):
+    def play_video(self, video, frame_range, interval=30, points = None, axis = None, show_saturation = False, bit_depth = 16, color = 'r', include_W = False, roi_size = (11,11), save_fig_ax = False):
         def find_W(points_i):
             X = np.array([])
             Y = np.array([])
@@ -231,6 +232,9 @@ class EMA_Structure:
             return im, text
     
         ani = animation.FuncAnimation(fig, update, frames=frame_range, interval=interval)
+        if save_fig_ax:
+            ani.fig = fig
+            ani.ax = ax
         plt.show()
         return ani
 

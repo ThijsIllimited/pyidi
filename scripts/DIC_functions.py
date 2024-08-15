@@ -9,23 +9,46 @@ import json as js
 import pandas as pd
 
 class DIC_Structure(FeatureSelecter, pyidi.pyIDI):
-    def __init__(self, file_path):
+    def __init__(self, file_path, reference_image = None):
         # super().__init__(file_path)
         self.file_root = os.path.dirname(file_path)
         self.file_path = file_path
         self.file_name = os.path.basename(file_path)
         self.base_name = self.file_name.split('.')[0]
+        self.file_extension = self.file_name.split('.')[1]
         if self.base_name[-4:-2] == '_S':
             self.base_name = self.base_name[:-4]
         self.video = pyidi.pyIDI(file_path)
-        self.feature_selecter = FeatureSelecter(self.video.mraw[0])
+        if reference_image is None:
+            self.feature_selecter = FeatureSelecter(self.video.reader.get_frame(0))
+        else:
+            self.feature_selecter = FeatureSelecter(self.image_from_range(reference_image))
 
-        # Copy the attributes of the FeatureSelecter class to the DIC_Structure class
-        for attr, value in self.feature_selecter.__dict__.items():
-            setattr(self, attr, value)
-        for attr, value in self.video.__dict__.items():
-            setattr(self, attr, value)
+        # # Copy the attributes of the FeatureSelecter class to the DIC_Structure class
+        # for attr, value in self.feature_selecter.__dict__.items():
+        #     setattr(self, attr, value)
+        # for attr, value in self.video.__dict__.items():
+        #     setattr(self, attr, value)
         pass
+    
+    def image_from_range(self, sequential_image_n=0):
+        """
+        Returns a still frame from the given video object.
+
+        Args:
+            sequential_image_n (int, tuple, or np.ndarray): The index or range of sequential images to plot.
+        """
+        if isinstance(sequential_image_n, tuple):
+            still_image = np.zeros(self.video.reader.get_frame(0).shape)
+            n = sequential_image_n[1] - sequential_image_n[0]
+            for im_i in range(sequential_image_n[0], sequential_image_n[1]):
+                still_image += self.video.reader.get_frame(im_i) / n
+        elif isinstance(sequential_image_n, np.ndarray):
+            still_image = sequential_image_n
+        else:
+            still_image = self.video.reader.get_frame(sequential_image_n)
+        
+        return still_image
 
     def plot_frame(self, sequential_image_n = 0, show_saturation = False, bit_depth = 16):
         """
@@ -36,12 +59,7 @@ class DIC_Structure(FeatureSelecter, pyidi.pyIDI):
             show_saturation (bool): If True, the saturated pixels are shown in blue and green.
             bit_depth (int): The bit depth of the image.
         """
-        if type(sequential_image_n) == tuple:
-            still_image = np.mean(self.video.mraw[sequential_image_n[0]:sequential_image_n[1]], axis=0)
-        elif isinstance(sequential_image_n, np.ndarray):
-            still_image = sequential_image_n
-        else:
-            still_image = self.video.mraw[sequential_image_n]
+        still_image = self.image_from_range(sequential_image_n)
 
         fig, ax = plt.subplots(figsize=(18, 8))
         fig.tight_layout()
@@ -57,12 +75,8 @@ class DIC_Structure(FeatureSelecter, pyidi.pyIDI):
         return fig, ax
     
     def plot_path(self, points = None, d = None, d_scale = 1, sequential_image_n = 0, bit_depth = 16):
-        if type(sequential_image_n) == tuple:
-            still_image = np.mean(self.video.mraw[sequential_image_n[0]:sequential_image_n[1]], axis=0)
-        elif isinstance(sequential_image_n, np.ndarray):
-            still_image = sequential_image_n
-        else:
-            still_image = self.video.mraw[sequential_image_n]
+        still_image = self.image_from_range(sequential_image_n)
+
         if points is None:
             points = self.points
         if d is None:
@@ -101,24 +115,24 @@ class DIC_Structure(FeatureSelecter, pyidi.pyIDI):
         if frame_range is None:
             frame_range = range(0, self.N)
         fig, ax = plt.subplots()
-        im = ax.imshow(self.video.mraw[frame_range[0]], cmap='gray')
+        im = ax.imshow(self.video.reader.get_frame(frame_range[0]), cmap='gray')
         text = ax.text(ij_counter[0], ij_counter[1], '', transform=ax.transAxes, color='black', ha='right', va='bottom')
 
         if show_saturation:
-            over_sat = np.where(self.video.mraw[frame_range[0]] > int(0.99*(2**bit_depth-1)))
+            over_sat = np.where(self.video.reader.get_frame(frame_range[0]) > int(0.99*(2**bit_depth-1)))
             over_sat_plot = ax.plot(over_sat[1], over_sat[0], 'b.', alpha=0.2)
-            under_sat = self.video.mraw[frame_range[0]] < int(0.01*(2**bit_depth-1))
+            under_sat = self.video.reader.get_frame(frame_range[0]) < int(0.01*(2**bit_depth-1))
             under_sat_plot = ax.plot(under_sat[1], under_sat[0], 'g.', alpha=0.2)
         if points is not None:
             pts = ax.plot(points[:,0,1], points[:,0,0], 'r.')
 
         def update(i):
-            im.set_data(self.video.mraw[i])
+            im.set_data(self.video.reader.get_frame(i))
             text.set_text(f'Frame {i}')
             if show_saturation:
-                over_sat = np.where(self.video.mraw[i] > int(0.99*(2**bit_depth-1)))
+                over_sat = np.where(self.video.reader.get_frame(i) > int(0.99*(2**bit_depth-1)))
                 over_sat_plot[0].set_data(over_sat[1], over_sat[0])
-                under_sat = np.where(self.video.mraw[i] < int(0.01*(2**bit_depth-1)))
+                under_sat = np.where(self.video.reader.get_frame(i) < int(0.01*(2**bit_depth-1)))
                 under_sat_plot[0].set_data(under_sat[1], under_sat[0])
             if points is not None:
                 pts[0].set_data(points[:,i,1], points[:,i,0])
@@ -206,7 +220,7 @@ class DIC_Structure(FeatureSelecter, pyidi.pyIDI):
 
             cih_file    = settings['cih_file']
             createdate  = settings['createdate']
-            self.info = settings['info']
+            # self.info = settings['info']
             method = settings['method']
             DIC_settings = settings['settings']
             roi_size = DIC_settings['roi_size']
