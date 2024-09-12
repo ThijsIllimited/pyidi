@@ -66,8 +66,12 @@ class EMA_Structure:
                 break
         if self.file_path is not None:
             video = pyidi.pyIDI(self.file_path)
-            self.fs_camera = video.info['Record Rate(fps)']
-            self.t_camera_raw = np.arange(video.info['Total Frame']) / self.fs_camera
+            try:
+                self.fs_camera = video.info['Record Rate(fps)']
+                self.t_camera_raw = np.arange(video.info['Total Frame']) / self.fs_camera
+            except:
+                warn.warn('No camera frame rate found in the video file. Check the file name and paths to check.')
+                    
             return video
         else:
             warn.warn('Video file not found. Check the file name and paths to check.')

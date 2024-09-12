@@ -239,26 +239,32 @@ class pyIDI():
 
     
     def __repr__(self):
+        rep = 'File name: ' + self.cih_file + ',\n'
+    
+        if hasattr(self, 'image_width'):
+            rep += 'Image width: ' + str(self.image_width) + ',\n'
         
-        rep = 'File name: ' + self.cih_file + ',\n' + \
-        'Image width: ' + str(self.image_width) + ',\n' + \
-        'Image height: ' + str(self.image_height) + ',\n' + \
-        'Total frame: ' + str(self.N) + ',\n' + \
-        'Record Rate(fps): ' + str(self.info['Record Rate(fps)'])
+        if hasattr(self, 'image_height'):
+            rep += 'Image height: ' + str(self.image_height) + ',\n'
+        
+        if hasattr(self, 'N'):
+            rep += 'Total frame: ' + str(self.N) + ',\n'
+        
+        if hasattr(self, 'info') and 'Record Rate(fps)' in self.info:
+            rep += 'Record Rate(fps): ' + str(self.info['Record Rate(fps)']) + ',\n'
         
         if hasattr(self, 'method_name'):
-            rep +=',\n' +  'Method: ' + self.method_name
-                
-            if hasattr(self.method, 'subset_size'):
-                rep += ',\n' + 'Subset size: ' + str(self.method.subset_size)
-                
-            elif hasattr(self.method, 'roi_size'):
-                 rep += ',\n' + 'ROI size: ' + str(self.method.roi_size)
-
+            rep += 'Method: ' + self.method_name + ',\n'
+            
+            if hasattr(self, 'method'):
+                if hasattr(self.method, 'subset_size'):
+                    rep += 'Subset size: ' + str(self.method.subset_size) + ',\n'
+                elif hasattr(self.method, 'roi_size'):
+                    rep += 'ROI size: ' + str(self.method.roi_size) + ',\n'
         
         if hasattr(self, 'points'):
-             rep +=',\n' + 'Number of points: ' + str(len(self.points))
-
+            rep += 'Number of points: ' + str(len(self.points)) + ',\n'
+        
         return rep
     
     def gui(self):

@@ -93,9 +93,9 @@ for file_i, file in enumerate(files):
         invalid_files.append(name_video)
         continue
     test_number = last_row['test_number']
-    input_string = input(f"'' to continue with test_number: {test_number}, type integer to change test_number: ")
-    if input_string != '':
-        test_number = int(input_string)
+    # input_string = input(f"'' to continue with test_number: {test_number}, type integer to change test_number: ")
+    # if input_string != '':
+    #     test_number = int(input_string)
     print(f"Test number: {test_number}")
     EMA_structure.tp, EMA_structure.d = DIC_structure.join_results([test_number])
     td = EMA_structure.d +  EMA_structure.tp.reshape(len(EMA_structure.tp),1,2)
@@ -103,15 +103,16 @@ for file_i, file in enumerate(files):
     d_lim = 35
     shift = (0,0)
 
-    EMA_structure.nut_idx((prey_ij[0] + shift[0], prey_ij[1] + shift[1]), exclude_high_amplitude = True, d_lim = d_lim)
     EMA_structure.initialize_signals()
     EMA_structure.initialize_displacement(idx='all', dir='xy')
+    
+    EMA_structure.nut_idx((prey_ij[0] + shift[0], prey_ij[1] + shift[1]), exclude_high_amplitude = True, d_lim = d_lim)
+    d_lim = int(np.ceil(np.max(np.abs(EMA_structure.displacements_raw[EMA_structure.nearest_nut_index,:,0]))))
+    EMA_structure.nut_idx((prey_ij[0] + shift[0], prey_ij[1] + shift[1]), exclude_high_amplitude = True, d_lim = d_lim)
+
     first_zero_id_force = EMA_structure.find_signal_start(EMA_structure.force_raw, peak_n=peak_n, treshold=0.05, approximate_height = peak_F_threshold)
 
-    # ani = EMA_structure.play_video(video, range(300,video.reader.N-1), interval=100, points=np.array([td[EMA_structure.nearest_nut_index]]))
     fig1 = plt.figure(figsize=(15, 10))
-    # fig1.tight_layout()
-    # Create a GridSpec with 4 rows and 2 columns
     gs = gridspec.GridSpec(4, 2, width_ratios=[1, 1])
 
     # Add subplots to the first column (4 rows)
@@ -133,8 +134,8 @@ for file_i, file in enumerate(files):
     ax6.set_xticks([])
     ax6.set_yticks([])
     valid_points_plot = ax6.plot(EMA_structure.tp[EMA_structure.exclude_high_amplitude,1], EMA_structure.tp[EMA_structure.exclude_high_amplitude,0], 'r.')
-    
-    ax1.set_title(f'{name_video} \n Current d_lim: {d_lim}\n shift: {shift}\n comment: {comment}')
+    max_d = np.max(np.abs(EMA_structure.displacements_raw[EMA_structure.nearest_nut_index,:,0]))
+    ax1.set_title(f'{name_video} \n Current d_lim: {d_lim}\n max d: {max_d} \n shift: {shift}\n comment: {comment}')
     nut_plot_y = ax1.plot(EMA_structure.t_camera_raw, EMA_structure.displacements_raw[EMA_structure.nearest_nut_index,:,0], label=f'Node {EMA_structure.nearest_nut_index}')
     nut_plot_x = ax2.plot(EMA_structure.t_camera_raw, EMA_structure.displacements_raw[EMA_structure.nearest_nut_index,:,1], label=f'Node {EMA_structure.nearest_nut_index}')
     ax3.plot(EMA_structure.t_force_raw, EMA_structure.force_raw)
@@ -159,7 +160,8 @@ for file_i, file in enumerate(files):
         except:
             print('Invalid input')
             continue
-        ax1.set_title(f'{name_video} \n Current d_lim: {d_lim}\n shift: {shift}\n comment: {comment}')
+        max_d = np.max(np.abs(EMA_structure.displacements_raw[EMA_structure.nearest_nut_index,:,0]))
+        ax1.set_title(f'{name_video} \n Current d_lim: {d_lim}\n max d: {max_d} \n shift: {shift}\n comment: {comment}')
         EMA_structure.nut_idx((prey_ij[0] + shift[0], prey_ij[1] + shift[1]), exclude_high_amplitude = True, d_lim = d_lim)
         nut_loc_plot[0].set_data(EMA_structure.tp[EMA_structure.nearest_nut_index,1], EMA_structure.tp[EMA_structure.nearest_nut_index,0])
         nut_plot_y[0].set_ydata(EMA_structure.displacements_raw[EMA_structure.nearest_nut_index,:,0])
@@ -168,14 +170,14 @@ for file_i, file in enumerate(files):
         ax2.set_ylim(np.max(np.abs(EMA_structure.displacements_raw[EMA_structure.nearest_nut_index,:,1]))*1.1, -np.max(np.abs(EMA_structure.displacements_raw[EMA_structure.nearest_nut_index,:,1]))*1.1)
         valid_points_plot[0].set_data(EMA_structure.tp[EMA_structure.exclude_high_amplitude,1], EMA_structure.tp[EMA_structure.exclude_high_amplitude,0])
     plt.close('all')
-    if 'test_number' not in df_file_description.columns:
-        df_file_description['test_number'] = None
+
     df_file_description.loc[indices, 'shift'] = str(shift)
     df_file_description.loc[indices, 'd_lim'] = d_lim
     df_file_description.loc[indices, 'test_number'] = test_number
     df_file_description.loc[indices, 'nut_idx'] = EMA_structure.nearest_nut_index
     
     print(f'File {file_i} of {len(files)-1} saved')
+    df_file_description.to_csv('H:/My Drive/PHD/HSC/file_descriptions_wEMA.csv')
 
 
 print(invalid_files)
