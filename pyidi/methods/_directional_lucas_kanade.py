@@ -29,11 +29,13 @@ from .idi_method import IDIMethod
 import warnings
 
 
-class LucasKanade_1D(IDIMethod):
+class DirectionalLucasKanade(IDIMethod):
     """
-    Translation identification based on the Lucas-Kanade method using least-squares
+    Translation identification based on the Directional Lucas-Kanade method using least-squares
     iterative optimization with the Zero Normalized Cross Correlation optimization
     criterium.
+    Consider citing the following article when using this method:
+    Masmeijer, Thijs and Zaletelj, Klemen and Slavič, Janko and Habtour, Ed, Directional DIC Method with Automatic Feature Selection. Available at SSRN: https://ssrn.com/abstract=4907539 or http://dx.doi.org/10.2139/ssrn.4907539
     """  
     def configure(
         self, roi_size=(9, 9), smoothing_size = (1,1), dyx = (1,0), pad=(2,2), max_nfev=20, 

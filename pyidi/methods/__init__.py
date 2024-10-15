@@ -5,4 +5,4 @@ from ._lucas_kanade_scipy import LucasKanadeSc
 from ._lucas_kanade import LucasKanade
 from ._lucas_kanade_scipy2 import LucasKanadeSc2
 from ._large_displacement_optical_flow import LargeDisplacementOpticalFlow
-from ._directional_lucas_kanade import LucasKanade_1D
+from ._directional_lucas_kanade import DirectionalLucasKanade
