@@ -296,6 +296,7 @@ class LucasKanade(IDIMethod):
                 return -displacement # roles of F and G are switched
 
         # max_iter was reached before the convergence criterium
+        self.warnings.append('Optimization did not converge.')
         return -displacement
 
 

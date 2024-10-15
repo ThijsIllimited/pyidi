@@ -58,6 +58,7 @@ files_ema_d = glob.glob('D:/thijsmas/HSC/**/*_EMA_damped.pkl', recursive=True)
 
 for file_cam, file_cam_d, file_ema, file_ema_d in zip(files_cam, files_cam_d, files_ema, files_ema_d):
     # Load the files
+    print(file_cam)
     with open(file_cam, 'rb') as f:
         cam = pkl.load(f)
     # with open(file_cam_d, 'rb') as f:

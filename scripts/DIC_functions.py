@@ -113,7 +113,7 @@ class DIC_Structure(FeatureSelecter, pyidi.pyIDI):
         if bit_depth == 'auto':
             bit_depth = self.video.info['Color Bit']
         if frame_range is None:
-            frame_range = range(0, self.N)
+            frame_range = range(0, self.video.reader.N)
         fig, ax = plt.subplots()
         im = ax.imshow(self.video.reader.get_frame(frame_range[0]), cmap='gray')
         text = ax.text(ij_counter[0], ij_counter[1], '', transform=ax.transAxes, color='black', ha='right', va='bottom')

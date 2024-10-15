@@ -122,3 +122,6 @@ dmypy.json
 
 /scripts/temp_file
 
+**/*.xlsx
+**/*.rst
+scripts/**/*.npy

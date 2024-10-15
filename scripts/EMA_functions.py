@@ -1,4 +1,3 @@
-import pyidi
 import os
 import matplotlib.pyplot as plt
 import numpy as np
@@ -50,6 +49,7 @@ class EMA_Structure:
         Returns:
             pyidi.pyIDI: The pyIDI object representing the opened video file.
         """
+        import pyidi
         self.file_path = None
         if add_extension:
             self.file_name_video = self.file_name + "_S01.cihx"
@@ -150,10 +150,21 @@ class EMA_Structure:
         """
         markers = ['o', 'v', '^', '<', '>', '.', 'p', '*', 'h', 'H', '+', 'x', 'D', 'd', '|', '_', 's']
         if isinstance(sequential_image_n, tuple):
-            still_image = np.mean(video.mraw[sequential_image_n[0]:sequential_image_n[1]], axis=0)
-            self.mean_image = still_image
+            accumulator = None
+            frame_count = sequential_image_n[1] - sequential_image_n[0]
+
+            # Loop through the specified frame range
+            for i in range(sequential_image_n[0], sequential_image_n[1]):
+                frame = video.reader.get_frame(i)
+                if accumulator is None:
+                    # Initialize the accumulator with the first frame
+                    accumulator = np.zeros_like(frame, dtype=np.float64)
+                accumulator += frame
+
+            # Compute the mean image
+            self.mean_image = accumulator / frame_count
         else:
-            still_image = video.mraw[sequential_image_n]
+            still_image = video.reader.get_frame(sequential_image_n)
         fig, ax = plt.subplots(figsize=(18, 8))
         fig.tight_layout()
         ax.imshow(still_image, cmap='gray', vmin=0, vmax=2**bit_depth-1)
