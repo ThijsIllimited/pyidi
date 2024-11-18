@@ -204,7 +204,7 @@ for file_i, (name_video, path_video, root_video) in enumerate(zip(df_filtered['f
     
     arg_higer = np.argmin(np.abs(EMA_structure.freq_camera - cam.upper))
     S_xx_min, S_xx_max = np.min(mean_S_xx[:arg_higer]), np.max(mean_S_xx[:arg_higer])
-    ax_Sxx.semilogy(EMA_structure.freq_camera, mean_S_xx, '-')
+    ax_Sxx.semilogy(EMA_structure.freq_camera, mean_S_xx, '-', lw = 2)
     ax_Sxx.set_xlim([0, cam.upper])
     ax_Sxx.set_ylim([S_xx_min*0.1, S_xx_max*1.3])
     ax_Sxx.set_title('S_xx [pixel^2]')
