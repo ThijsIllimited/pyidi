@@ -24,68 +24,108 @@ from scipy.signal import find_peaks
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Import test data
-df_file_description = pd.read_csv('H:/My Drive/PHD/HSC/file_descriptions_wEMA.csv')
+file_path_settings = 'I:/My Drive/PHD/HSC/file_descriptions_wEMA.csv'
+df_file_description = pd.read_csv(file_path_settings)
 # Back up the data
-df_file_description.to_csv('H:/My Drive/PHD/HSC/file_descriptions_wEMA_backup.csv')
+df_file_description.to_csv('I:/My Drive/PHD/HSC/file_descriptions_wEMA_backup.csv')
 
 # List all files
-files_cam = glob.glob('D:/thijsmas/HSC/**/*_cam.pkl', recursive=True)
-files_ema = glob.glob('D:/thijsmas/HSC/**/*_EMA.pkl', recursive=True)
-files_cam_d = glob.glob('D:/thijsmas/HSC/**/*_cam_damped.pkl', recursive=True)
-files_ema_d = glob.glob('D:/thijsmas/HSC/**/*_EMA_damped.pkl', recursive=True)
-
-# fig_poles, ax_poles = plt.subplots()
-# pole_plot, = ax_poles.plot([], [], 'x')
-
-
-# fig, ax = plt.subplots(2, 1)
-# plt.ion()
-# H_plot ,            = ax[0].semilogy([], [], 'k-', label='H')
-# frf_cam_plot ,      = ax[0].semilogy([], [], 'r--', label='frf - cam')
-# # poles_cam_plot ,    = ax[0].plot([], [], 'x', label='poles - cam')
-# H_d_plot ,          = ax[1].semilogy([], [], 'k-', label='H damped')
-# frf_d_raw_plot ,    = ax[1].semilogy([], [], 'r--', label='frf damped - raw')
-# frf_d_cam_plot ,    = ax[1].semilogy([], [], 'r--', label='frf damped - cam')
-# poles_d_cam_plt ,   = ax[1].plot([], [], 'x', label='poles damped - cam')
-# ax[0].set_xlim([0, 300])
-# ax[1].set_xlim([0, 300])
-# ax[0].set_ylim([1e-1, 1e4])
-# ax[1].set_ylim([1e-1, 1e4])
+required_parameters = [ 'id0_cam',
+                        'id0_for',
+                        'double_tap',
+                        'smooth_lim',
+                        'max_drift',
+                        'max_end_drift', 
+                        'peak_n', 
+                        'peak_F', 
+                        'peak_F_threshold', 
+                        'shift',
+                        'test_number', 
+                        'd_lim', 
+                        'prey_ij_d', 
+                        'prey_ij', 
+                        'spider_ij_d', 
+                        'spider_ij',
+                        'max_t_diff']
 
 
-# fig2, ax2 = plt.subplots()
+double_tap = False
+taut_loose = 'Loose'
+impact_pluck = 'Impact'
+df_filtered = df_file_description[(df_file_description['taut/loose'] == taut_loose) &
+                                   (df_file_description['impact/pluck'] == impact_pluck) &
+                                   (df_file_description['double_tap'] == double_tap)]
 
-for file_cam, file_cam_d, file_ema, file_ema_d in zip(files_cam, files_cam_d, files_ema, files_ema_d):
-    # Load the files
-    print(file_cam)
-    with open(file_cam, 'rb') as f:
-        cam = pkl.load(f)
-    # with open(file_cam_d, 'rb') as f:
-    #     cam_d = pkl.load(f)
+for file_i, (name_video, path_video, root_video) in enumerate(zip(df_filtered['filename'], df_filtered['path2'], df_filtered['root'])):
+    if pd.isna(path_video):
+        print(f'Could not open {name_video}')
+        continue
+    df = df_file_description[df_file_description['filename'].isin([name_video])]
+    try:
+        peak_n = df['peak_n'].item()
+        peak_F = df['peak_F'].item()
+        peak_F_threshold = df['peak_F_threshold'].item()
+        prey_ij = ast.literal_eval(df['prey_ij'].item())
+        spider_ij = ast.literal_eval(df['spider_ij'].item())
+        shift = ast.literal_eval(df['shift'].item())
+        d_lim = df['d_lim'].item()
+        test_number = df['test_number'].item()
+        nut_idx = df['nut_idx'].item()
+        smooth_lim = df['smooth_lim'].item()
+        max_drift = df['max_drift'].item()
+        max_end_drift = df['max_end_drift'].item()
+    except:
+        print(f'File {name_video} not found in file description')
+        continue
+    if os.path.exists(f'{root_video}/{name_video}_main_modes.png'):
+        print(f'{name_video} already has a figure')
+        continue
+    file_parameters, index = unpack_dataframe(df_filtered, name_video, required_parameters)
+    if file_parameters is None:
+        print(f'some items in {name_video} could not be unpacked')
+        continue
+    EMA_structure = EMA_Structure(name_video)
+    EMA_structure.set_params(**file_parameters)
+    if np.isnan(EMA_structure.id0_cam):
+        print(f'{name_video} has no cam id')
+        continue
+
+    EMA_structure.set_params(FN0 = 41.2, reaction_time = 0.1) # FN0 from Lott: Prey localization in spider orb webs using modal vibration analysis. reaction_time from (Klärner and Barth1982)
+    if EMA_structure.double_tap:
+        print(f'{name_video} had a double impact')
+        continue
+
+    EMA_structure.open_impact_data()
+    video = EMA_structure.open_video(add_extension = False)
+    fps = video.info['Record Rate(fps)']
+    dt = 1/fps
+                    
+    DIC_structure = DIC_Structure(path_video)
+    df = DIC_structure.list_test_data(test_range = range(1, 100), robostness_check = False)
+    print(df)
+    try:
+        last_row = df.iloc[-1]  # Get the last row of the DataFrame
+    except:
+        print(f'File {name_video} not found in DIC data')
+        continue
+
+    file_path_cam = os.path.join(root_video, f'{name_video}_cam_2.pkl')
+    with open(file_path_cam, 'rb') as file:
+        cam = pkl.load(file)
+
     if 'nat_freq' in cam.__dict__.keys():
         continue
-    with open(file_ema, 'rb') as f:
-        EMA_structure = pkl.load(f)
-    with open(file_ema_d, 'rb') as f:
-        EMA_structure_d = pkl.load(f)
-    # ax2.semilogy(EMA_structure_d.freq_camera, np.mean(np.abs(EMA_structure_d.H1[EMA_structure_d.valid_tps]), axis=0))   
-    # plt.show()
-    mean_abs_H1 = np.mean(np.abs(EMA_structure_d.H1[EMA_structure_d.valid_tps]), axis=0)
-    max_amp = np.max(mean_abs_H1)
-    # H_plot.set_data(EMA_structure.freq_camera, np.mean(np.abs(EMA_structure.H1[EMA_structure.valid_tps]), axis=0))
-    # H_d_plot.set_data(EMA_structure_d.freq_camera, np.mean(np.abs(EMA_structure_d.H1[EMA_structure_d.valid_tps]), axis=0))
-    peaks, _ = find_peaks(mean_abs_H1[EMA_structure_d.freq_camera<300], distance=6, width=3)
-    # poles_d_cam_plt.set_data(EMA_structure_d.freq_camera[peaks], mean_abs_H1[peaks])
+
     try:
-        file_name = file_cam.split('\\')[-1].split('.cihx_cam.pkl')[0]
+        file_name = file_path_cam.split('\\')[-1].split('.cihx_cam.pkl')[0]
     except:
-        file_name = file_cam.split('\\')[-1].split('_cam.pkl')[0]
+        file_name = file_path_cam.split('\\')[-1].split('_cam.pkl')[0]
     # frf_d_raw_plot.set_data(cam_d.freq, np.mean(np.abs(cam_d.frf), axis=0))
     plt.draw()
     plt.pause(0.001)
     while True:
-        cam.select_poles(approx_nat_freq=EMA_structure_d.freq_camera[peaks])
+        # cam.select_poles(approx_nat_freq=EMA_structure_d.freq_camera[peaks])
+        cam.select_poles()
         # frf_cam_plot.set_data(cam.freq, np.mean(np.abs(cam.frf), axis=0))
         plt.draw()
         plt.pause(0.001)
@@ -95,7 +135,7 @@ for file_cam, file_cam_d, file_ema, file_ema_d in zip(files_cam, files_cam_d, fi
         elif input_string == 'n':
             continue
 
-    with open(file_cam, 'wb') as f:
+    with open(file_path_cam, 'wb') as f:
         pkl.dump(cam, f)
     # cam_d.select_closest_poles(cam.nat_freq, f_window=5, fn_temp=0.001, xi_temp=0.05)
     # while True:

@@ -3,13 +3,14 @@ import os
 import sys
 
 # Get the directory of the current file
-current_dir = os.path.dirname(os.path.realpath('__file__'))
+current_dir = os.path.dirname(os.path.realpath(__file__))
 
 # Get the parent directory
 parent_dir = os.path.dirname(current_dir)
-
-# Add the parent directory to the system path
+# Add the current directory and parent directory to the system path
+sys.path.insert(0, current_dir)
 sys.path.insert(0, parent_dir)
+
 import numpy as np              # Python's standard numerical library
 import matplotlib.pyplot as plt # Python's scientific visualization library
 from pixel_setter import play_video
@@ -24,9 +25,11 @@ import matplotlib.gridspec as gridspec
 # import re
 
 # Import test data
-df_file_description = pd.read_csv('H:/My Drive/PHD/HSC/file_descriptions_wEMA.csv')
+file_path_settings = 'I:/My Drive/PHD/HSC/file_descriptions_wEMA.csv'
+df_file_description = pd.read_csv(file_path_settings)
+df_file_description = df_file_description.loc[:, ~df_file_description.columns.str.startswith('Unnamed')]
 # Back up the data
-df_file_description.to_csv('H:/My Drive/PHD/HSC/file_descriptions_wEMA_backup.csv')
+df_file_description.to_csv('I:/My Drive/PHD/HSC/file_descriptions_wEMA_backup.csv')
 
 # List all files
 files = glob.glob('D:/thijsmas/HSC/**/*.cihx', recursive=True)
@@ -96,20 +99,28 @@ for file_i, file in enumerate(files):
     #     df_file_description.loc[16, 'nut_idx'] = None
     #     continue
     try:
+        prey_ij = ast.literal_eval(df_filtered['prey_ij'].item())
+        spider_ij = ast.literal_eval(df_filtered['spider_ij'].item())
+    except:
+        print(f'spider and prey locations not set in {name_video}')
+        invalid_files.append(name_video)
+        continue
+    try:
         peak_n = df_filtered['peak_n'].item()
         peak_F = df_filtered['peak_F'].item()
         peak_F_threshold = df_filtered['peak_F_threshold'].item()
-        prey_ij = ast.literal_eval(df_filtered['prey_ij'].item())
-        spider_ij = ast.literal_eval(df_filtered['spider_ij'].item())
-        shift = ast.literal_eval(df_filtered['shift'].item())
-        d_lim = df_filtered['d_lim'].item()
-        test_number = df_filtered['test_number'].item()
-        nut_idx = df_filtered['nut_idx'].item()
-        smooth_lim = df_filtered['smooth_lim'].item()
     except:
-        print(f'File {name_video} not found in file description')
+        print(f'peak_n is not defined in {name_video} not found in file description (Impact_settings_all_webs.py)')
         invalid_files.append(name_video)
         continue
+    try:
+        shift = ast.literal_eval(df_filtered['shift'].item())
+        d_lim = df_filtered['d_lim'].item()
+        test_number = int(df_filtered['test_number'].item())
+        nut_idx = int(df_filtered['nut_idx'].item())
+    except:
+        print(f'd_lim not set in {name_video} (EMA_settings_all_webs.py)')
+    
     if isinstance(peak_n, str):
         if peak_n == 'taut' or peak_n == 'invalid test':
             print(f'File {name_video} is a taut or invalid test')
@@ -120,15 +131,24 @@ for file_i, file in enumerate(files):
     if np.isnan(peak_n):
         print(f'File {name_video} has no peak_n')
         continue
-    test_number = int(test_number)
-    nut_idx = int(nut_idx)
 
-    if isinstance(smooth_lim, str):
-        smooth_lim = eval(smooth_lim)
+    smooth_lim = df_filtered['smooth_lim'].item()
+    # if isinstance(smooth_lim, str):
+        # smooth_lim = eval(smooth_lim)
     if not np.isnan(smooth_lim):
         continue
 
     EMA_structure = EMA_Structure(name_video)
+    # try:
+    #     shift = ast.literal_eval(df_filtered['shift'].item())
+    #     test_number = df_filtered['test_number'].item()
+    #     test_number = int(test_number)
+    #     nut_idx = int(nut_idx)
+    #     nut_idx = df_filtered['nut_idx'].item()
+    # except:
+    #     shift = [0, 0]
+    #     test_number = 1
+    #     # nut_idx = EMA_structure.nearest_nut_index
     # Open impact data
     EMA_structure.open_impact_data()
     video = EMA_structure.open_video(add_extension = False)
@@ -227,7 +247,7 @@ for file_i, file in enumerate(files):
     ax4.set_xlim([0, 50])
     ax4.set_ylim([1e-1, 1e4])
 
-    ax5.set_title(f'drift limit general: {max_drift}, drift limit end: {max_end_drift}, smooth limit: {smooth_lim}')
+    ax5.set_title(f'drift limit general: smooth limit: {smooth_lim}, {max_drift}, drift limit end: {max_end_drift}')
     ax5.imshow(video.reader.get_frame(0), cmap='gray', vmin=0, vmax=2**16-1)
     smooth_points_plot[0].set_data(EMA_structure.tp[smooth_dlim,1], EMA_structure.tp[smooth_dlim,0])
     drift_points_plot[0].set_data(EMA_structure.tp[drift_d_lim,1], EMA_structure.tp[drift_d_lim,0])
@@ -293,5 +313,5 @@ for file_i, file in enumerate(files):
     df_file_description.loc[indices, 'max_drift'] = max_drift
     df_file_description.loc[indices, 'max_end_drift'] = max_end_drift
     print(f'File {file_i} of {len(files)} saved')
-    df_file_description.to_csv('H:/My Drive/PHD/HSC/file_descriptions_wEMA.csv')
+    df_file_description.to_csv(file_path_settings)
 print(invalid_files)

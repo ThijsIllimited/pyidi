@@ -59,9 +59,6 @@ for file in files:
     ROI = np.load(file_name_roi)
     path = Path(ROI.T)
     
-    # files_points = glob.glob('D:/thijsmas/HSC/**/*_points.npy', recursive=True)
-    # files_name_base_points = ['_'.join(file_point.split('\\')[-1].split('_')[:-1]) for file_point in files_points]
-    # len_files_roi = len(files_points)
     EMA_structure = EMA_Structure(file_name)
     video = EMA_structure.open_video(add_extension=False)
     mean_image = video.mraw[reference_image[0]:reference_image[1]].mean(axis=0)

@@ -10,6 +10,11 @@ from scipy.spatial.distance import cdist
 import pandas as pd
 import matplotlib.animation as animation
 import re
+import matplotlib.cm as cm
+import matplotlib.colors as col
+import cv2
+import matplotlib.patches as patches
+import ast
 
 class EMA_Structure:
     def __init__(self, file_name):
@@ -20,8 +25,8 @@ class EMA_Structure:
         else:
             self.file_name_base = self.file_name
         self.d = None
-        self.paths_to_check = [r'D:/HSC', r'F:/', r'E:/thijs/', r'C:/Users/thijs/Documents/HSC/', r'D:/thijsmas/HSC',r'D:/thijsmas/HSC - Ladisk', r'D:/thijsmas', r'H:/My Drive/PHD/HSC',]
-        self.root_impact    = os.path.normpath(r'H:/My Drive/PHD/Data')
+        self.paths_to_check = [r'D:/HSC', r'F:/', r'E:/thijs/', r'C:/Users/thijs/Documents/HSC/', r'D:/thijsmas/HSC',r'D:/thijsmas/HSC - Ladisk', r'D:/thijsmas', r'I:/My Drive/PHD/HSC',]
+        self.root_impact    = os.path.normpath(r'I:/My Drive/PHD/Data')
         self.root_simulations = r'G:/.shortcut-targets-by-id/1k1B8zPb3T8H7y6x0irFZnzzmfQPHMRPx/Illimited Lab Projects/Research Projects/Spiders/Simulations'
         self.root_disp      = r"C:/Users/thijsmas/Documents/GitHub/pyidi_data/displacements" #r"G:/.shortcut-targets-by-id/1k1B8zPb3T8H7y6x0irFZnzzmfQPHMRPx/Illimited Lab Projects/Research Projects/Spiders/Simulations/displacements"
         self.root_cam       = r'G:/.shortcut-targets-by-id/1k1B8zPb3T8H7y6x0irFZnzzmfQPHMRPx/Illimited Lab Projects/Research Projects/Spiders/Simulations/EMA models'
@@ -610,6 +615,37 @@ class EMA_Structure:
                 return index_force, index_camera
         return None
     
+    def process_signals(self, first_zero_id_cam, first_zero_id_force):
+        # max_d = np.max(np.abs(self.displacements_raw[self.nearest_nut_index,:,0]))
+        # first_zero_id_cam = self.find_signal_start(self.displacements_raw[self.nearest_nut_index,:,0], treshold=0.08, approximate_height = max_d*.5, approximate_distance=100000)
+        # first_zero_id_force = self.find_signal_start(self.force_raw, peak_n=peak_n, treshold=0.05, approximate_height = peak_F_threshold)
+        # first_zero_id_force = self.find_signal_start(self.force_raw, peak_n=peak_n, treshold=0.05)
+        zeros_camera    = self.greatest_common_divisor(self.fs_camera, self.fs_force)
+        zeros_force     = self.n_samples_camera_to_force(zeros_camera)
+
+        # Shift and align signals
+        self.t_camera = self.shift_time(self.t_camera_raw, self.t_camera_raw[first_zero_id_cam-zeros_camera])
+        self.t_force = self.shift_time(self.t_force_raw, self.t_force_raw[first_zero_id_force-zeros_force])
+
+        # Clip signals
+        self.t_camera          = self.clip_signal_before(self.t_camera,first_zero_id_cam-zeros_camera)
+        # self.displacements     = self.clip_signal_before(self.displacements_raw, first_zero_id_cam-zeros_camera)
+        self.displacements_x     = self.clip_signal_before(self.displacements_raw[:,:,1], first_zero_id_cam-zeros_camera)
+        self.displacements_y     = self.clip_signal_before(self.displacements_raw[:,:,0], first_zero_id_cam-zeros_camera)
+        self.t_force           = self.clip_signal_before(self.t_force, first_zero_id_force-zeros_force)
+        self.force             = self.clip_signal_before(self.force_raw, first_zero_id_force-zeros_force)
+
+        last_id_force, last_id_camera   = self.find_last_common_time_ids(self.t_camera, self.t_force)
+        self.t_camera          = self.clip_signal_after(self.t_camera, last_id_camera)
+        # self.displacements     = self.clip_signal_after(self.displacements, last_id_camera)
+        self.displacements_x     = self.clip_signal_after(self.displacements_x, last_id_camera)
+        self.displacements_y     = self.clip_signal_after(self.displacements_y, last_id_camera)
+        self.t_force           = self.clip_signal_after(self.t_force, last_id_force)
+        self.force             = self.clip_signal_after(self.force, last_id_force)
+
+        # Zero Force after impact
+        self.force = self.zero_signal_treshold(self.force, 0.1)
+
     def prepare_signals(self, peak_id = 0, threshold  = 0.001, approximate_force_peak_height = 0.5):
         """
         Prepare the signals
@@ -757,6 +793,7 @@ class EMA_Structure:
         return
 
     def exclude_tp(self, d_lim = 15):
+        self.d_lim = d_lim
         self.exclude_high_amplitude = np.max(np.linalg.norm(self.d, axis=2),1)<d_lim
         return
     
@@ -781,6 +818,350 @@ class EMA_Structure:
             pkl.dump(self, f)
         return
     
+    def plot_hub_modes(self, cam, fig, ax_real, ax_imag, mode_number, video, D_in = 70, D_out = 100, nut_wh = (10, 60), account_for_distortion = True, normalize_colors = True):
+        still_frame = video.reader.get_frame(0)
+        if account_for_distortion:
+            file_path = os.path.splitext(video.cih_file)[0] + '_dist.pkl'
+            with open(file_path, 'rb') as f:
+                data = pkl.load(f)
+            homography_matrix = data['homography_matrix']
+            still_frame = cv2.warpPerspective(still_frame, homography_matrix, (still_frame.shape[1], still_frame.shape[0]))
+            spider_ij = np.array([self.spider_ij[0], self.spider_ij[1], 1])
+            spider_ij = np.dot(homography_matrix, spider_ij)
+            spider_ij = np.array([spider_ij[0]/spider_ij[2], spider_ij[1]/spider_ij[2]])
+            prey_ij = np.array([self.prey_ij[0], self.prey_ij[1], 1])
+            prey_ij = np.dot(homography_matrix, prey_ij)
+            prey_ij = np.array([prey_ij[0]/prey_ij[2], prey_ij[1]/prey_ij[2]])
+            tp = np.dot(homography_matrix, np.array([self.tp[:, 1], self.tp[:, 0], np.ones(self.tp.shape[0])]))
+            tp = (tp[1::-1]/tp[2][np.newaxis, :]).T
+            
+            self.prey_ij_dist = prey_ij
+            self.spider_ij_dist = spider_ij
+            self.tp_dist = tp
+            prey_ij = self.prey_ij_d
+            spider_ij = self.spider_ij_d
+        else:
+            spider_ij = self.spider_ij
+            prey_ij = self.prey_ij
+            tp = self.tp
+
+        _, _, _, full_mask = self.hub_classifier( D_in = D_in, D_out = D_out, nut_wh = nut_wh, account_for_distortion = account_for_distortion)
+
+        cmap_circ = cm.get_cmap('Accent')
+        norm = col.Normalize(vmin=0, vmax=1)
+        sm = cm.ScalarMappable(norm = norm, cmap=cmap_circ)
+
+        ax_real.imshow(still_frame, cmap='gray')
+        ax_imag.imshow(still_frame, cmap='gray')
+        fig, ax_real, ax_imag = plot_mode_shape_flat(cam, fig, ax_real, ax_imag, mode_number, tp[self.valid_tps], full_mask[self.valid_tps], normalize_colors = normalize_colors)
+        ax_real.set_aspect('equal')
+        ax_real.set_xlim(spider_ij[0]-D_out*0.75, spider_ij[0]+D_out*0.75)
+        ax_real.set_ylim(spider_ij[1]+D_out*0.75, spider_ij[1]-D_out*0.75)
+        ax_real.plot([spider_ij[0], prey_ij[0]], [spider_ij[1], prey_ij[1]], 'r-', lw = 5)
+        ax_imag.set_aspect('equal')
+        ax_imag.set_xlim(spider_ij[0]-D_out*0.75, spider_ij[0]+D_out*0.75)
+        ax_imag.set_ylim(spider_ij[1]+D_out*0.75, spider_ij[1]-D_out*0.75)
+        ax_imag.plot([spider_ij[0], prey_ij[0]], [spider_ij[1], prey_ij[1]], 'r-', lw = 5)
+
+    def plot_hub_features(self, fig, ax, video, D_in = 70, D_out = 100, nut_wh = (10, 60), n_sections = 8, account_for_distortion = True):
+        """ 
+        Plot the hub features.
+        Args:
+            video (Video): The video object. Function get first frame of the video.
+            height_pixels (int): The height of the elipse in pixels.
+            width_elipse (int): The width of the elipse in pixels.
+            n_sections (int): The number of sections to divide the elipse in.    
+        """
+        still_frame = video.reader.get_frame(0)
+        if account_for_distortion:
+            file_path = os.path.splitext(video.cih_file)[0] + '_dist.pkl'
+            with open(file_path, 'rb') as f:
+                data = pkl.load(f)
+            homography_matrix = data['homography_matrix']
+            still_frame = cv2.warpPerspective(still_frame, homography_matrix, (still_frame.shape[1], still_frame.shape[0]))
+            spider_ij = np.array([self.spider_ij[0], self.spider_ij[1], 1])
+            spider_ij = np.dot(homography_matrix, spider_ij)
+            spider_ij = np.array([spider_ij[0]/spider_ij[2], spider_ij[1]/spider_ij[2]])
+            prey_ij = np.array([self.prey_ij[0], self.prey_ij[1], 1])
+            prey_ij = np.dot(homography_matrix, prey_ij)
+            prey_ij = np.array([prey_ij[0]/prey_ij[2], prey_ij[1]/prey_ij[2]])
+            tp = np.dot(homography_matrix, np.array([self.tp[:, 1], self.tp[:, 0], np.ones(self.tp.shape[0])]))
+            tp = (tp[1::-1]/tp[2][np.newaxis, :]).T
+            
+            self.prey_ij_dist = prey_ij
+            self.spider_ij_dist = spider_ij
+            self.tp_dist = tp
+            prey_ij = self.prey_ij_d
+            spider_ij = self.spider_ij_d
+        else:
+            spider_ij = self.spider_ij
+            prey_ij = self.prey_ij
+            tp = self.tp
+
+        inside_and_valid, angle_sections, bucket_edges = self.section_classifier(n_sections = n_sections, D_in = D_in, D_out = D_out, nut_wh = nut_wh, account_for_distortion = account_for_distortion)
+        self.inside_and_valid = inside_and_valid
+        self.angle_sections = angle_sections
+        self.d_hub_x = self.displacements_x[inside_and_valid]
+        self.d_hub_y = self.displacements_y[inside_and_valid]
+        cmap_circ = cm.get_cmap('Accent')
+        norm = col.Normalize(vmin=0, vmax=1)
+        sm = cm.ScalarMappable(norm = norm, cmap=cmap_circ)
+        self.n_sections = n_sections
+        # fig, ax = plt.subplots(figsize = (10,10))
+        ax.imshow(still_frame, cmap='gray')
+        ax.set_aspect('equal')
+        ax.set_xlim(spider_ij[0]-D_out*0.75, spider_ij[0]+D_out*0.75)
+        ax.set_ylim(spider_ij[1]+D_out*0.75, spider_ij[1]-D_out*0.75)
+        ax.plot([spider_ij[0], prey_ij[0]], [spider_ij[1], prey_ij[1]], 'r-', lw = 5)
+        ax.scatter(tp[self.valid_tps,1], tp[self.valid_tps,0], s = 2, c = 'black')
+        for section in range(n_sections):
+            current_points = angle_sections == section
+            ax.scatter(tp[inside_and_valid,1][current_points], tp[inside_and_valid,0][current_points], s = 14, c = 'white')
+            ax.scatter(tp[inside_and_valid,1][current_points], tp[inside_and_valid,0][current_points], s = 10, c = sm.to_rgba(section/(n_sections-1)))
+        circle = patches.Circle((spider_ij[0], spider_ij[1]), D_out/2, edgecolor='blue', facecolor='none', lw=1)
+        ax.add_patch(circle)
+        circle = patches.Circle((spider_ij[0], spider_ij[1]), D_in/2, edgecolor='blue', facecolor='none', lw=1)
+        ax.add_patch(circle)
+
+        circle_center = (spider_ij[0], spider_ij[1])
+        rect_x_min = circle_center[0] - nut_wh[0] / 2
+        rect_x_max = circle_center[0] + nut_wh[0] / 2
+        rect_y_min = circle_center[1] - 3*nut_wh[1] / 4
+        rect_y_max = circle_center[1] + nut_wh[1] / 4
+        ax.plot([rect_x_min, rect_x_max, rect_x_max, rect_x_min, rect_x_min], [rect_y_min, rect_y_min, rect_y_max, rect_y_max, rect_y_min], 'b-', lw=1)
+        
+        # TEMP
+        # ax.plot(self.prey_ij_dist[0], self.prey_ij_dist[1], 'ro')
+        # ax.plot(self.spider_ij_dist[0], self.spider_ij_dist[1], 'bo')
+        # ax.scatter(self.tp_dist[:,1], self.tp_dist[:,0], s = 14, c = 'black')
+        return fig, ax
+    
+    def plot_hub_disp(self,fig, ax, t_max = None, d_max = 'auto', normalized = True, style = 'translation', legend = True, title = True, xlabel = True, lim_lines = False, plot_nut_disp = False):
+        """
+        Plot the displacement of the hub."""
+        cmap_circ = cm.get_cmap('Accent')
+        norm = col.Normalize(vmin=0, vmax=1)
+        sm = cm.ScalarMappable(norm = norm, cmap=cmap_circ)
+        if normalized:
+            reaction_time = self.reaction_time/self.fn0*self.FN0
+            time_vector = self.t_camera/self.fn0*self.FN0
+            arg_rt_max = np.argmax(time_vector > reaction_time)
+            d_norm = np.max(np.abs(self.d_hub_y)[:,:arg_rt_max])
+            self.d_hub_y = self.d_hub_y/d_norm
+            if xlabel:
+                ax.set_xlabel(r'Time (scaled: $t\cdot 42.1 Hz/fn_0$)')
+            ax.set_ylabel('scaled displacement (d/max(d))')
+        else:
+            reaction_time = self.reaction_time
+            time_vector = self.t_camera
+            arg_rt_max = np.argmax(time_vector > reaction_time)
+            if xlabel:
+                ax.set_xlabel('Time [s]')
+            ax.set_ylabel('Displacement [pixels]')
+            if t_max is not None:
+                t_max = t_max/self.FN0*self.fn0
+        
+        if (style == 'rotation'or style == 'pitch_roll') and normalized:
+            ax.set_ylabel('$\Delta$d normalized [-]')
+        elif (style == 'rotation'or style == 'pitch_roll') and not normalized:
+            ax.set_ylabel('$\Delta$d [pixels]')
+
+        if t_max is None:
+            t_max = time_vector[-1]
+
+        arg_t_max = np.argmax(time_vector > t_max)
+        if d_max == 'auto':
+            d_max = np.max(np.abs(self.d_hub_y)[:,:arg_t_max])
+        elif d_max == 'd_lim':
+            d_max = self.d_lim
+
+        # fig, ax = plt.subplots(figsize = (16, 8))
+        t_max_vec = []
+        d_max_vec = []
+        if style == 'translation':
+            for section in range(self.n_sections):
+                current_points = self.angle_sections == section
+                if np.sum(current_points) == 0:
+                    continue
+                max_row_disp, max_col_disp = np.unravel_index(np.argmax(self.d_hub_y[current_points,:arg_rt_max].flatten()), self.d_hub_y[current_points,:arg_rt_max].shape)
+                for i in range(self.d_hub_y[current_points].shape[0]):
+                    ax.plot(time_vector, -self.d_hub_y[current_points][i],'--', color=sm.to_rgba(section/(self.n_sections-1)), alpha=0.5, lw=0.5)
+                ax.plot(time_vector, -np.mean(self.d_hub_y[current_points], axis=0), color = sm.to_rgba(section/(self.n_sections-1)), lw = 3, label = f'mean section {section+1}', zorder=10)
+                ax.scatter(time_vector[max_col_disp], -self.d_hub_y[current_points][max_row_disp, max_col_disp], marker='*', s = 80, color=sm.to_rgba(section/(self.n_sections-1)), label = f'Max. d in sec: {section+1}', zorder=12)
+                t_max_vec.append(time_vector[max_col_disp])
+                d_max_vec.append(-self.d_hub_y[current_points][max_row_disp, max_col_disp])
+            if lim_lines:
+                t0 = np.min(t_max_vec)
+                t1 = np.max(t_max_vec)
+                d0 = np.min(d_max_vec)
+                d1 = np.max(d_max_vec)
+                ax.vlines(t0, -d_max*1.05, d1, color='r', linestyle='--', zorder=11, label='min/max first peak')
+                ax.vlines(t1, -d_max*1.05, d1, color='r', linestyle='--', zorder=11)
+                ax.hlines(d0, 0, t1, color='r', linestyle='--', zorder=11)
+                ax.hlines(d1, 0, t1, color='r', linestyle='--', zorder=11)
+            
+            if plot_nut_disp:
+                ax.plot(time_vector, -self.displacements_y[self.nearest_nut_index]/np.max(np.abs(self.displacements_y)[self.nearest_nut_index,:arg_rt_max]), 'k:', lw=1, alpha = 0.7, label='Nut displacement', zorder=9)
+
+        elif style == 'rotation':
+            for section in range(self.n_sections//2):
+                pointset1 = self.angle_sections == section
+                pointset2 = self.angle_sections == section + self.n_sections//2
+                mean_disp1 = np.mean(self.d_hub_y[pointset1], axis=0)
+                mean_disp2 = np.mean(self.d_hub_y[pointset2], axis=0)
+                ax.plot(time_vector, -mean_disp1 + mean_disp2, color = sm.to_rgba(section/(self.n_sections-1)), lw = 3, label = f'mean (sec {section+1} - sec {section+1+self.n_sections//2})', zorder=10)
+        
+        elif style == 'pitch_roll':
+            pointset1 = self.angle_sections == 0
+            pointset2 = self.angle_sections == self.n_sections//2
+            mean_disp1 = np.mean(self.d_hub_y[pointset1], axis=0)
+            mean_disp2 = np.mean(self.d_hub_y[pointset2], axis=0)
+            ax.plot(time_vector, -mean_disp1 + mean_disp2, color = sm.to_rgba(0), lw = 3, label = f'mean pitch', zorder=10)
+
+            pointset1 = self.angle_sections == self.n_sections//4
+            pointset2 = self.angle_sections == 3*self.n_sections//4
+            mean_disp1 = np.mean(self.d_hub_y[pointset1], axis=0)
+            mean_disp2 = np.mean(self.d_hub_y[pointset2], axis=0)
+            ax.plot(time_vector, -mean_disp1 + mean_disp2, color = sm.to_rgba(self.n_sections//4), lw = 3, label = f'mean roll', zorder=10)
+
+
+        ax.vlines(reaction_time, -d_max*1.05, d_max*1.05, color='k', linestyle='--', label='Reaction time (scaled) (100ms)')
+         
+        if title:
+            if type(title) == str:
+                ax.set_title(title)
+            else:
+                ax.set_title(self.file_name)
+        ax.set_xlim([0, t_max])
+        ax.set_ylim([-d_max*1.05, d_max*1.05])
+        if legend:
+            legend = ax.legend(loc = 'lower center', ncols = self.n_sections//2 + 1, bbox_to_anchor=(0.5, 0.9))
+            legend.set_zorder(100)
+
+        return fig, ax, np.array(t_max_vec), np.array(d_max_vec)
+
+    def set_params(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+        return
+    
+    def hub_classifier(self, D_in = 50, D_out = 100, nut_wh = (10, 60), account_for_distortion = True):
+        self.D_in = D_in
+        self.D_out = D_out
+        self.nut_wh = nut_wh
+        if account_for_distortion:
+            spider_ij = self.spider_ij_d
+            tp = self.tp_dist
+        else:
+            spider_ij = self.spider_ij
+            tp = self.tp
+        circle_center = (spider_ij[0], spider_ij[1])
+        a_in = D_in / 2
+        a_out = D_out / 2
+
+        # Rectangle bounds based on the circle center
+        rect_x_min = circle_center[0] - nut_wh[0] / 2
+        rect_x_max = circle_center[0] + nut_wh[0] / 2
+        rect_y_min = circle_center[1] - 3*nut_wh[1] / 4
+        rect_y_max = circle_center[1] + nut_wh[1] / 4
+
+        # Exclude points inside the rectangle
+        outside_rectangle = np.logical_or.reduce((
+                            tp[:, 1] < rect_x_min,
+                            tp[:, 1] > rect_x_max,
+                            tp[:, 0] < rect_y_min,
+                            tp[:, 0] > rect_y_max
+                            ))
+        inside_circle = (tp[:,1] - circle_center[0])**2 / a_in**2 + (tp[:,0] - circle_center[1])**2 / a_in**2 >= 1
+        outside_circle = (tp[:,1] - circle_center[0])**2 / a_out**2 + (tp[:,0] - circle_center[1])**2 / a_out**2 <= 1
+        full_mask = inside_circle & outside_circle & outside_rectangle
+        inside_and_valid = self.valid_tps & full_mask
+        return tp, inside_and_valid, spider_ij, full_mask
+
+    def section_classifier(self, n_sections = 8, D_in = 50, D_out = 100, nut_wh = (10, 60), account_for_distortion = True):
+        self.D_in = D_in
+        self.D_out = D_out
+        self.nut_wh = nut_wh
+        if account_for_distortion:
+            prey_ij = self.prey_ij_d
+        else:
+            prey_ij = self.prey_ij
+        tp, inside_and_valid, spider_ij, _ = self.hub_classifier( D_in = D_in, D_out = D_out, nut_wh = nut_wh, account_for_distortion = account_for_distortion)
+        points_inside_ellipse = tp[inside_and_valid]
+        angles = np.arctan2(-(points_inside_ellipse[:, 0] - spider_ij[1]), points_inside_ellipse[:, 1] - spider_ij[0])
+
+        angle_prey = np.arctan2(-(prey_ij[1] - spider_ij[1]), prey_ij[0] - spider_ij[0])
+        if angle_prey < 0:
+            angle_prey += 2*np.pi
+        angle_prey = angle_prey/(2*np.pi)
+        angles[angles < 0] = angles[angles < 0] + 2*np.pi
+        normalized_angles = angles/(2*np.pi)
+
+        bucket_edges = np.linspace(-1/(2*n_sections), 1-1/(2*n_sections), num=n_sections + 1) + angle_prey
+        bucket_edges = bucket_edges - np.floor(bucket_edges)
+        bucket_edges[bucket_edges > 1] -= 1
+        bucket_edges[0] = 0
+        bucket_edges = np.append(bucket_edges,1)
+        bucket_edges = np.sort(bucket_edges)
+        angle_sections = (np.digitize(normalized_angles, bucket_edges, right = True)-1).astype(int)
+        angle_sections[angle_sections == n_sections] = 0
+        start_index = np.searchsorted(bucket_edges, angle_prey, side='right') - 1
+        angle_sections = np.mod(angle_sections - start_index, n_sections)
+        bucket_edges = np.roll(bucket_edges[1:-1], -start_index)
+        return inside_and_valid, angle_sections, bucket_edges
+
+    def plot_Sxx_freq(self, ax_Sxx, S_xx, n_sections = 8, D_in = 50, D_out = 100, nut_wh = (10, 60), account_for_distortion = True):
+        cmap_circ = cm.get_cmap('Accent')
+        norm = col.Normalize(vmin=0, vmax=1)
+        sm = cm.ScalarMappable(norm = norm, cmap=cmap_circ)
+        inside_and_valid, angle_sections, _ = self.section_classifier(n_sections = n_sections, D_in = D_in, D_out = D_out, nut_wh = nut_wh, account_for_distortion = account_for_distortion)
+        for section in range(n_sections):
+            current_points = angle_sections == section
+            if np.sum(current_points) == 0:
+                continue
+            S_xx_current = np.mean(np.abs(S_xx[inside_and_valid][current_points]), axis=0)
+            ax_Sxx.plot(self.freq_camera, S_xx_current, c = sm.to_rgba(section/(n_sections-1)), label = f'Section {section+1}')
+
+    def plot_Sxx_sections(self, fig, ax_imag, ax_real, S_xx_fn, n_sections = 8, D_in = 50, D_out = 100, nut_wh = (10, 60), account_for_distortion = True):
+        overlay_ax_imag = fig.add_axes(ax_imag.get_position(), frame_on=False)
+        overlay_ax_real = fig.add_axes(ax_real.get_position(), frame_on=False)
+        cmap_circ = cm.get_cmap('Accent')
+        inside_and_valid, angle_sections, bucket_edges = self.section_classifier(n_sections = n_sections, D_in = D_in, D_out = D_out, nut_wh = nut_wh, account_for_distortion = account_for_distortion)
+        R = 0.9
+        x = R * np.cos(bucket_edges * 2 * np.pi - np.pi/n_sections)
+        y = R * np.sin(bucket_edges * 2 * np.pi - np.pi/n_sections)
+        S_real = []
+        # S_imag = []
+        norm = col.Normalize(vmin=0, vmax=1)
+        sm = cm.ScalarMappable(norm = norm, cmap=cmap_circ)
+        for section in range(n_sections):
+            current_points = angle_sections == section
+            if np.sum(current_points) == 0:
+                S_real.append(np.nan)
+                continue
+            S_xx_current = S_xx_fn[inside_and_valid][current_points]
+            S_real.append(np.mean(np.abs(S_xx_current), axis=0))
+            # S_imag.append(np.mean(np.imag(S_xx_current), axis=0))
+
+            overlay_ax_imag.plot([0, x[section]], [0, y[section]], c = sm.to_rgba(section/(n_sections-1)), lw = 1.5)
+            overlay_ax_real.plot([0, x[section]], [0, y[section]], c = sm.to_rgba(section/(n_sections-1)), lw = 1.5)
+        cmap_S = cm.get_cmap('plasma')
+        # all_values = np.concatenate([S_real, S_imag])
+        norm_S = col.Normalize(vmin=np.nanmin(S_real), vmax=np.nanmax(S_real))
+
+        # Set the limits for circular overlay
+        overlay_ax_imag.set_xlim(-1, 1)
+        overlay_ax_imag.set_ylim(-1, 1)
+        overlay_ax_imag.axis('off')
+
+        overlay_ax_real.set_xlim(-1, 1)
+        overlay_ax_real.set_ylim(-1, 1)
+        overlay_ax_real.axis('off')
+
+        # Scatter plots with normalized colors for S_imag and S_real on overlay axes
+        # overlay_ax_imag.scatter(x, y, c=S_imag, cmap=cmap_S, norm=norm_S)
+        overlay_ax_real.scatter(x, y, c=S_real, cmap=cmap_S, norm=norm_S)
+            
     @staticmethod
     def load(file_name, root = None):
         if root is None:
@@ -824,6 +1205,29 @@ def plot_H(cam, fig = None, ax = None, c = 'r', ls = '-', label = None, annotate
     ax.semilogy(cam.freq, np.abs(H), color=c, linestyle=ls, label=label)
     return fig, ax
 
+def plot_mode_shape_flat(cam, fig, ax_real, ax_imag, mode_number, tp, mask = None, normalize_colors = False):
+    if mask is None:
+        mask = np.ones(tp.shape[0], dtype=bool)
+    tp_lim = tp[mask]
+    A       = cam.A[mask, mode_number]
+    A_real =  np.real(A)
+    A_imag =  np.imag(A)
+    cmap = plt.cm.get_cmap('plasma')
+    if normalize_colors:
+        min_A = np.min(np.abs(A))
+        max_A = np.max(np.abs(A))
+        A_real = (A_real - min_A) / (max_A - min_A)
+        A_imag = (A_imag - min_A) / (max_A - min_A)
+        ax_imag.set_title(f'min: {min_A:.2g}, max: {max_A:.2g}', fontsize=8)
+    # norm = col.Normalize(vmin=np.min(np.abs(cam.A[:, mode_number])), vmax=np.max(np.abs(cam.A[:, mode_number])))
+    ax_real.set_ylabel(f'Real: {mode_number+1} - {cam.nat_freq[mode_number]:.2f} Hz\n part: {np.abs(cam.partfactors[cam.pole_ind[mode_number][0]][cam.pole_ind[mode_number][1]]):.2f}')
+    ax_real.scatter(tp_lim[:, 1], tp_lim[:, 0], c = A_real, cmap = cmap)#, norm=norm)
+    # ax_real.axis('off')   
+    ax_imag.set_ylabel(f'Imag: {mode_number+1} - {cam.nat_freq[mode_number]:.2f} Hz\n part: {np.abs(cam.partfactors[cam.pole_ind[mode_number][0]][cam.pole_ind[mode_number][1]]):.2f}')
+    ax_imag.scatter(tp_lim[:, 1], tp_lim[:, 0], c = A_imag, cmap = cmap)#, norm=norm)
+    # ax_imag.axis('off')
+    return fig, ax_real, ax_imag
+
 def plot_mode_shape(cam, mode_number, tp_lim, node, view=(28, -76), find_Z=False):
     A = cam.A
     A_imag = np.imag(A[:, mode_number]) / np.linalg.norm(A[:, mode_number])
@@ -858,24 +1262,29 @@ def plot_mode_shape(cam, mode_number, tp_lim, node, view=(28, -76), find_Z=False
     plt.show()
     return fig, ax
 
-def plot_MAC(cam, n_modes = 15, mode_vec = None, cmap='plasma'):
+def plot_MAC(cam, fig, ax, n_modes = 15, mode_vec = None, cmap='plasma'):
     MAC = cam.autoMAC()
     if mode_vec is not None:
-        MAC_copy = np.copy(MAC)
-        MAC_copy = MAC[mode_vec, :]
-        MAC_copy = MAC[:, mode_vec]
-        MAC = MAC_copy
+        grid_x, grid_y = np.meshgrid(mode_vec, mode_vec)
+        # MAC_copy = np.copy(MAC)
+        MAC = MAC[grid_x, grid_y]
+        n_modes = len(mode_vec)
     
     # Add row and column of zeros
     MAC = np.pad(MAC, ((1, 0), (1, 0)), mode='constant')
     
-    fig, ax = plt.subplots( figsize=(8, 8))
+    # fig, ax = plt.subplots( figsize=(8, 8))
     im = ax.imshow(MAC, cmap=cmap)
     fig.colorbar(im, ax=ax)
     n_modes = min(n_modes, len(cam.nat_freq))
     ax.set_xlim([.5, n_modes+.5])
     ax.set_ylim([n_modes+.5, .5])
-    plt.show()
+    if mode_vec is not None:
+        ax.set_xticks(range(1, n_modes+1))
+        ax.set_yticks(range(1, n_modes+1))
+        mode_vec = [f'{mode+1}' for mode in mode_vec]
+        ax.set_xticklabels(mode_vec)
+        ax.set_yticklabels(mode_vec)
     return fig, ax
 # def FRF_from_poles(cam):
 #     fn     = cam.nat_fre
@@ -977,30 +1386,28 @@ def get_PI_histogram(still_image, bins=100, remove_sides_fraction = None,  show=
         return fig, ax
     return fig
 
-def section_classifier(EMA_structure, n_sections = 8, width_elipse = 100, height_elipse = 100):
-    spider_ij = EMA_structure.spider_ij
-    prey_ij = EMA_structure.prey_ij
-    ellipse_center = (spider_ij[0], -spider_ij[1])
-    a = width_elipse / 2
-    b = height_elipse / 2
-
-    inside_ellipse = (EMA_structure.tp[:,1] - ellipse_center[0])**2/a**2 + (-EMA_structure.tp[:,0] - ellipse_center[1])**2/b**2 <=1
-    inside_and_valid = np.logical_and(inside_ellipse, EMA_structure.valid_tps)
-    points_inside_ellipse = EMA_structure.tp[inside_and_valid]
-    angles = np.arctan2(-(points_inside_ellipse[:, 0] - spider_ij[1]), points_inside_ellipse[:, 1] - spider_ij[0])
-
-    angle_prey = np.arctan2(-(prey_ij[1] - spider_ij[1]), prey_ij[0] - spider_ij[0])
-    if angle_prey < 0:
-        angle_prey += 2*np.pi
-    angle_prey = angle_prey/(2*np.pi)
-    angles[angles < 0] = angles[angles < 0] + 2*np.pi
-    normalized_angles = angles/(2*np.pi)
-    bucket_edges = np.linspace(-1/(2*n_sections), 1-1/(2*n_sections), num=n_sections + 1) + angle_prey
-    bucket_edges = bucket_edges - np.floor(bucket_edges)
-    bucket_edges[bucket_edges > 1] -= 1
-    bucket_edges[0] = 0
-    bucket_edges = np.append(bucket_edges,1)
-    bucket_edges = np.sort(bucket_edges)
-    angle_sections = (np.digitize(normalized_angles, bucket_edges, right = True)-1).astype(int)
-    angle_sections[angle_sections == n_sections] = 0
-    return inside_and_valid, angle_sections, bucket_edges[1:-1]
+def unpack_dataframe(df, name_video, keys):
+    # Filter the dataframe for the specific file name
+    df_filtered = df[df['filename'].isin([name_video])]
+    
+    if df_filtered.empty:
+        print(f'File {name_video} not found in the dataframe')
+        return None, None
+    
+    index = df_filtered.index
+    result = {}
+    for key in keys:
+        try:
+            item = df_filtered[key].item()
+            if isinstance(item, str):
+                if item == 'taut' or key == 'invalid test':
+                    print(f"taut or invalid test in {name_video}")
+                    return None, index
+                item = ast.literal_eval(item)
+            if isinstance(item, float) and item.is_integer():
+                item = int(item)
+            result[key] = item
+        except Exception as e:
+            print(f"{key} not set or invalid in {name_video}: {e}")
+            return None, index
+    return result, index

@@ -1,13 +1,14 @@
+# imports
 import os
 import sys
 
 # Get the directory of the current file
-current_dir = os.path.dirname(os.path.realpath('__file__'))
+current_dir = os.path.dirname(os.path.realpath(__file__))
 
 # Get the parent directory
 parent_dir = os.path.dirname(current_dir)
-
-# Add the parent directory to the system path
+# Add the current directory and parent directory to the system path
+sys.path.insert(0, current_dir)
 sys.path.insert(0, parent_dir)
 import numpy as np              # Python's standard numerical library
 import matplotlib.pyplot as plt # Python's scientific visualization library
@@ -25,7 +26,7 @@ from matplotlib.path import Path
 import time
 import glob
 import itertools
-root_drive_sim = os.path.normpath('G:/.shortcut-targets-by-id/1k1B8zPb3T8H7y6x0irFZnzzmfQPHMRPx/Illimited Lab Projects/Research Projects/Spiders/Simulations')
+root_drive_sim = os.path.normpath('I:/.shortcut-targets-by-id/1k1B8zPb3T8H7y6x0irFZnzzmfQPHMRPx/Illimited Lab Projects/Research Projects/Spiders/Simulations')
 
 # Find all files ending with .cih in the folder
 files = glob.glob('D:/thijsmas/HSC/**/*.cihx', recursive=True)
@@ -78,7 +79,12 @@ for file in files:
         raise ValueError('Unknown tracking type')
     video.method.configure(roi_size = roi_size, reference_image = mean_image,  resume_analysis=False)
     video.set_points(points)
-    video.get_displacements(processes = processors)
+    try:
+        video.get_displacements(processes = 1)
+    except Exception as e:
+        print(f"Error in {file_name}")
+        print(e)
+        continue
 
     with open(os.path.join(file_root, f"{file_name_base}_analyzed.txt"), 'w') as file:
         file.write(f"File: {file_name}\n")
