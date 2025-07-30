@@ -26,12 +26,18 @@ import matplotlib.cm as cm
 import matplotlib.colors as col
 import matplotlib.gridspec as gridspec
 # import re
+plt.rcParams.update({
+    "text.usetex": True,
+    "font.family": "serif",
+    "font.serif": ["Computer Modern Roman"],
+})
+plt.rcParams.update({'font.size': 18})
 
 # Import test data
-df_file_description = pd.read_csv('I:/My Drive/PHD/HSC/file_descriptions_wEMA.csv')
+df_file_description = pd.read_csv('F:/My Drive/PHD/HSC/file_descriptions_wEMA.csv')
 df_file_description = df_file_description.loc[:, ~df_file_description.columns.str.startswith('Unnamed')]
 # Back up the data
-df_file_description.to_csv('I:/My Drive/PHD/HSC/file_descriptions_wEMA_backup.csv')
+df_file_description.to_csv('F:/My Drive/PHD/HSC/file_descriptions_wEMA_backup.csv')
 
 # List all files
 files = glob.glob('D:/thijsmas/HSC/**/*.cihx', recursive=True)
@@ -69,6 +75,10 @@ for file_i, file in enumerate(files):
     
     file_parameters, df_index = unpack_dataframe(df_file_description, name_video, required_parameters)
 
+    # if df_file_description.loc[df_index, 'cue2'].item() != pd.NA:
+    #     print(f'File {name_video} already processed')
+    #     continue
+
     if file_parameters is None:
         print(f'some items in {name_video} could not be unpacked')
         invalid_files.append(name_video)
@@ -105,6 +115,7 @@ for file_i, file in enumerate(files):
 
     if os.path.exists(file_path_cam):
         cam = pkl.load(open(file_path_cam, 'rb'))
+        # normalized = False
         normalized = True
         try:
             if cam.nat_freq[0]==0:
@@ -140,6 +151,7 @@ for file_i, file in enumerate(files):
     EMA_structure.valid_tps = smooth_signals & non_drifting & non_drifting2 & EMA_structure.exclude_high_amplitude
 
     fig = plt.figure(figsize=(13, 18))
+    plt.rcParams.update({'font.size': 16})
     plt.subplots_adjust(left=0.1, right=0.95, top=0.95, bottom=0.1)
     gs = gridspec.GridSpec(4, 2, height_ratios=[.5, 1, 1, 1], width_ratios=[.7, 1])
 
@@ -153,32 +165,42 @@ for file_i, file in enumerate(files):
     ax5 = fig.add_subplot(gs[3, :])  # Bottom subplot spanning both columns
     # fig, ax1 = plt.subplots(1, 1, figsize=(15, 15))
     fig, ax1 = EMA_structure.plot_hub_features(fig, ax1, DIC_structure.video, D_in = D_in, D_out = D_out, nut_wh = nut_wh, n_sections = 8)
+    # fig, ax1 = EMA_structure.plot_hub_features(fig, ax1, DIC_structure.video, D_in = D_in, D_out = D_out, nut_wh = nut_wh, n_sections = 8, rel_hub_dist = True)
     fig, ax3, t_max_vec, d_max_vec = EMA_structure.plot_hub_disp(fig, ax3, normalized = normalized, style = 'translation', t_max=0.8, legend = True, title = False, lim_lines = True, plot_nut_disp=True)
     max_t_diff = np.max(t_max_vec) - np.min(t_max_vec)
     max_d_diff = np.max(d_max_vec) - np.min(d_max_vec)
     fig, ax4, _, _ = EMA_structure.plot_hub_disp(fig, ax4, normalized = normalized, style = 'translation', t_max=0.15, legend = False, title = False)
+    # C2, Q = EMA_structure.Cue2(DIC_structure.video, D_in = 50, D_out = 100, nut_wh = (10, 60), account_for_distortion = True, n_angles = 1001, initial_guess = None, n_terms = 7, ax = ax4, t_max=0.8)
     # fig, ax5, _, _ = EMA_structure.plot_hub_disp(fig, ax5, normalized = normalized, style = 'rotation', t_max=0.8, legend = True, title = False)
-    fig, ax5, _, _ = EMA_structure.plot_hub_disp(fig, ax5, normalized = normalized, style = 'pitch_roll', t_max=0.8, legend = True, title = False)
+    # fig, ax5, _, max_pitch_roll = EMA_structure.plot_hub_disp(fig, ax5, normalized = normalized, style = 'pitch_roll', t_max=0.8, legend = True, title = False)
+    fig, ax5, _, max_pitch_roll = EMA_structure.plot_hub_disp(fig, ax5, normalized = False, style = 'pitch_roll', legend = True, title = False, t_max=0.8)
+    ax5.set_ylabel(r'$\theta,(-)$')
+    ax5.set_ylim(-np.abs(max_pitch_roll[0])*1.05,np.abs(max_pitch_roll[0])*1.4)
+    # best_score, best_angle = EMA_structure.Cue2_v2(D_in = D_in, D_out = D_out, nut_wh = nut_wh, account_for_distortion = True, n_angles = 1001, t_max=0.8)
+
+    cue2 = max_pitch_roll[0]/max_pitch_roll[1]
     info_text0 = f"""
-            Figure Information:
-            - fn0: {EMA_structure.fn0:.2f} Hz
-            - FN0: {EMA_structure.FN0:.2f} Hz
-            - Reaction time: {EMA_structure.reaction_time:.2f} s
-            - Peak Force: {EMA_structure.peak_F:.2f} N
+        Figure Information:
+        - fn0: {EMA_structure.fn0:.2f} Hz
+        - FN0: {EMA_structure.FN0:.2f} Hz
+        - Reaction time: {EMA_structure.reaction_time:.2f} s
+        - Peak Force: {EMA_structure.peak_F:.2f} N
+        - pitch/roll: {max_pitch_roll[0]/max_pitch_roll[1]:.3f}
             """
     info_text1 = f"""
-            - Test number: {EMA_structure.test_number}
-            - Prey distance: {np.linalg.norm([EMA_structure.prey_ij_dist[0]-EMA_structure.spider_ij_dist[0], EMA_structure.prey_ij_dist[1] - EMA_structure.spider_ij_dist[1]]):.2f} px
-            - Normalized?: {normalized}
-            - delta T: {max_t_diff:.2f} s
-            - delta D: {max_d_diff:.2f} px/-
+        - Test number: {EMA_structure.test_number}
+        - Prey distance: {np.linalg.norm([EMA_structure.prey_ij_dist[0]-EMA_structure.spider_ij_dist[0], EMA_structure.prey_ij_dist[1] - EMA_structure.spider_ij_dist[1]]):.2f} px
+        - Normalized?: {normalized}
+        - delta T: {max_t_diff:.2f} s
+        - delta D: {max_d_diff:.2f} px/-
             """
     info_text2 = f"""
-            - D_in: {D_in} px
-            - D_out: {D_out} px
-            - Nut width: {nut_wh[0]} px
-            - Nut height: {nut_wh[1]} px
-            - double tap: {EMA_structure.double_tap}
+        - D_in: {D_in} px
+        - D_out: {D_out} px
+        - Nut width: {nut_wh[0]} px
+        - Nut height: {nut_wh[1]} px
+        - double tap: {EMA_structure.double_tap}
+        - Cue2: {cue2:.2f}
             """
     ax2.text(1/6, 1, info_text0, transform=ax2.transAxes, fontsize=12, verticalalignment='top', horizontalalignment='center')
     ax2.text(3/6, 1, info_text1, transform=ax2.transAxes, fontsize=12, verticalalignment='top', horizontalalignment='center')
@@ -186,10 +208,12 @@ for file_i, file in enumerate(files):
     fig.suptitle(EMA_structure.file_name)
     # plt.show()
     print(f'Figure for {name_video} is generated')
+    print(f'{root_video}/{name_video}_hub_disp.png')
     fig.savefig(f'{root_video}/{name_video}_hub_disp.png')
 
     df_file_description.loc[df_index, 'max_t_diff'] = max_t_diff
     df_file_description.loc[df_index, 'max_d_diff'] = max_d_diff
-    df_file_description.to_csv('I:/My Drive/PHD/HSC/file_descriptions_wEMA.csv')
+    df_file_description.loc[df_index, 'cue2'] = cue2
+    df_file_description.to_csv('F:/My Drive/PHD/HSC/file_descriptions_wEMA.csv')
 
 print(invalid_files)

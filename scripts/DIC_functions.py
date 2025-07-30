@@ -3,6 +3,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+pyidi_path = os.path.abspath(os.path.join(os.getcwd(), '..', 'GitHub', 'pyidi'))
 from Feature_selecter import FeatureSelecter
 import pickle as pkl
 import json as js
@@ -74,6 +75,12 @@ class DIC_Structure(FeatureSelecter, pyidi.pyIDI):
         plt.show()
         return fig, ax
     
+    def get_mean_image(self, frame_range = None):
+        if frame_range is None:
+            frame_range = range(0, self.video.reader.N)
+        mean_image = np.mean([self.video.reader.get_frame(i) for i in frame_range], axis=0)
+        return mean_image
+
     def plot_path(self, points = None, d = None, d_scale = 1, sequential_image_n = 0, bit_depth = 16):
         still_image = self.image_from_range(sequential_image_n)
 

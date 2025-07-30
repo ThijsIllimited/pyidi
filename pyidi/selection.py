@@ -58,7 +58,7 @@ class ROISelect:
         self.fig = Figure(figsize=(10, 7))
         self.ax = self.fig.add_subplot(111)
         self.ax.grid(False)
-        frame = video.reader.get_frame(0)
+        frame = video.reader.get_frame(16)
         self.ax.imshow(frame, cmap='gray')
         self.ax.set_xlim(-30, frame.shape[1]+30)
         self.ax.set_ylim(frame.shape[0]+30, -30)

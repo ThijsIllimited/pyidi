@@ -72,7 +72,7 @@ for file_i, (name_video, path_video, root_video) in enumerate(zip(df_filtered['f
         print(f'File {name_video} already exists')
         # os.remove(file_path_camd)
         # os.remove(file_path_EMAd)
-        continue
+        # continue
 
     try:
         peak_n = df['peak_n'].item()

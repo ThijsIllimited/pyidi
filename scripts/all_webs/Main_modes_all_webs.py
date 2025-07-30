@@ -25,7 +25,7 @@ import pickle as pkl
 import matplotlib.cm as cm
 import matplotlib.colors as col
 import matplotlib.gridspec as gridspec
-df_file_description = pd.read_csv('I:/My Drive/PHD/HSC/file_descriptions_wEMA.csv')
+df_file_description = pd.read_csv('F:/My Drive/PHD/HSC/file_descriptions_wEMA.csv')
 df_file_description = df_file_description.loc[:, ~df_file_description.columns.str.startswith('Unnamed')]
 
 # List all files
@@ -87,7 +87,7 @@ for file_i, (name_video, path_video, root_video) in enumerate(zip(df_filtered['f
 
     if os.path.exists(f'{root_video}/{name_video}_main_modes.png'):
         print(f'{name_video} already has a figure')
-        continue
+        # continue
 
     file_parameters, index = unpack_dataframe(df_filtered, name_video, required_parameters)
     if file_parameters is None:
@@ -102,6 +102,9 @@ for file_i, (name_video, path_video, root_video) in enumerate(zip(df_filtered['f
     EMA_structure.set_params(FN0 = 41.2, reaction_time = 0.1) # FN0 from Lott: Prey localization in spider orb webs using modal vibration analysis. reaction_time from (Klärner and Barth1982)
     if EMA_structure.double_tap:
         print(f'{name_video} had a double impact')
+        continue
+    if df['mass'].item() == False:
+        print(f'{name_video} has no mass')
         continue
 
     EMA_structure.open_impact_data()
@@ -271,3 +274,21 @@ $f_n$ ratios (Hz/Hz):\n {nat_freq_ratios_str}
     # plt.show()
     fig.savefig(f'{root_video}/{name_video}_main_modes.png')
     print(f'Figure for {name_video} is generated')
+    fig2, ax2 = plt.subplots(2, 2, figsize=(15, 15))
+    ax2_flat = ax2.flatten()
+    for mode_i in range(4):
+        ax2_flat[mode_i].imshow(undistorted_image, cmap = 'gray')
+        fig, ax2_flat[mode_i], _ = plot_mode_shape_flat(cam, fig2, ax2_flat[mode_i], ax_imag, mode_selection[mode_i], tp, mask = None, normalize_colors = True, exclude_outliers = True, lb=8, ub=8)
+        # fig2, ax2_flat[mode_i] = plot_mode_shape_flat_abs(cam, fig2, ax2_flat[mode_i], mode_selection[mode_i], tp, mask = None, normalize_colors = True)
+        ax2_flat[mode_i].scatter(EMA_structure.spider_ij_d[0], EMA_structure.spider_ij_d[1], color='white', s=140, marker='d', label='Spider', edgecolor='black',linewidths=2)
+        ax2_flat[mode_i].scatter(EMA_structure.prey_ij_d[0], EMA_structure.prey_ij_d[1], color='black', s=120, marker='o', label='Prey', edgecolor='white',linewidths=2)
+        ax2_flat[mode_i].set_xticks([])
+        ax2_flat[mode_i].set_yticks([])
+        ax2_flat[mode_i].set_xlim([first_true, last_true])
+        ax2_flat[mode_i].legend(loc ='upper right', fontsize=18)
+        ax2_flat[mode_i].spines['top'].set_visible(False)
+        ax2_flat[mode_i].spines['right'].set_visible(False)
+        ax2_flat[mode_i].spines['left'].set_visible(False)
+        ax2_flat[mode_i].spines['bottom'].set_visible(False)
+
+    fig2.savefig(f'{root_video}/{name_video}_modes1_2.png', dpi = 300)
