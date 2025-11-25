@@ -27,7 +27,7 @@ class EMA_Structure:
             self.file_name_base = self.file_name
         self.d = None
         self.paths_to_check = [r'D:/HSC', r'E:/thijs/', r'C:/Users/thijs/Documents/HSC/', r'D:/thijsmas/HSC',r'D:/thijsmas/HSC - Ladisk', r'D:/thijsmas', r'D:/thijsmas/HSC', r'F:/']
-        self.root_impact    = os.path.normpath(r'F:/My Drive/PHD/Data')
+        self.root_impact    = os.path.normpath(r'K:/My Drive/PHD/Data')
         self.root_simulations = r'J:/.shortcut-targets-by-id/1k1B8zPb3T8H7y6x0irFZnzzmfQPHMRPx/Illimited Lab Projects/Research Projects/Spiders/Simulations'
         self.root_disp      = r"C:/Users/thijsmas/Documents/GitHub/pyidi_data/displacements" #r"J:/.shortcut-targets-by-id/1k1B8zPb3T8H7y6x0irFZnzzmfQPHMRPx/Illimited Lab Projects/Research Projects/Spiders/Simulations/displacements"
         self.root_cam       = r'J:/.shortcut-targets-by-id/1k1B8zPb3T8H7y6x0irFZnzzmfQPHMRPx/Illimited Lab Projects/Research Projects/Spiders/Simulations/EMA models'
