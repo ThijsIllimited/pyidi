@@ -1,4 +1,5 @@
 import sys, os
+import pytest
 import pyMRAW
 import numpy as np
 
@@ -82,6 +83,14 @@ def test_get_frames_mp4():
     # print('test_get_frames_mp4: passed')
     return None
 
+def test_get_frames_cine():
+    pytest.importorskip("cine_reader")
+    video = pyidi.VideoReader(input_file='./data/data_small_cine.cine')
+    assert video.get_frames(4).shape[0] == 4
+    assert video.get_frames((1, 5)).shape[0] == 4
+    # print('test_get_frames_cine: passed')
+    return None
+
 if __name__ == '__main__':
     test_png_stream()
     test_mp4()
@@ -90,3 +99,4 @@ if __name__ == '__main__':
     test_get_frames_mraw()
     test_get_frames_ndarray()
     test_get_frames_mp4()
+    test_get_frames_cine()

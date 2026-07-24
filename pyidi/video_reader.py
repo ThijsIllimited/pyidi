@@ -11,6 +11,7 @@ import imageio.v3 as iio
 import warnings
 
 PHORTRON_HEADER_FILE = ['cih', 'cihx']
+CINE_FILE = ["cine"]
 SUPPORTED_IMAGE_FORMATS = ['png', 'tif', 'tiff', 'bmp', 'jpg', 'jpeg', 'gif']
 PYAV_SUPPORTED_VIDEO_FORMATS = ['avi', 'mkv', 'mp4', 'mov', 'm4v', 'wmv', 'webm', 'flv', 'ogg', 'ogv']
 CHANNELS = {'R': 0, 'G': 1, 'B': 2}
@@ -83,6 +84,21 @@ class VideoReader:
             if self.fps is None:
                 self.fps = int(info['Record Rate(fps)'])
             self.info = info
+
+        elif self.file_format in CINE_FILE:
+            try:
+                from cine_reader import Cine
+            except ImportError as e:
+                raise ImportError(
+                    "Reading .cine files requires the 'cine-reader' package. "
+                    "Please install it using: pip install cine-reader"
+                ) from e
+
+            self._cine = Cine(input_file)
+            self.N = self._cine.total_frames
+            self.image_width = self._cine.image_header.biWidth
+            self.image_height = abs(self._cine.image_header.biHeight)
+            self.fps = int(self._cine.frame_rate)
         
         elif self.file_format in SUPPORTED_IMAGE_FORMATS:
             image_prop = iio.improps(input_file)
@@ -138,6 +154,9 @@ class VideoReader:
         if self.file_format in PHORTRON_HEADER_FILE or self.file_format == 'np.ndarray':
             image = self._frames[frame_number]
 
+        elif self.file_format in CINE_FILE:
+            image = self._get_frame_from_cine(frame_number, *args, **kwargs)
+
         elif self.file_format in SUPPORTED_IMAGE_FORMATS:
             image = self._get_frame_from_image(frame_number, *args, **kwargs)
 
@@ -180,6 +199,9 @@ class VideoReader:
 
         if self.file_format in PHORTRON_HEADER_FILE or self.file_format == 'np.ndarray':
             frames = self._frames[frames_start:frames_end]
+
+        elif self.file_format in CINE_FILE:
+            frames = self._get_frames_from_cine(frames_start, n_frames)
         
         else:
             frames = np.zeros((n_frames, self.image_height, self.image_width), dtype=int)
@@ -187,6 +209,30 @@ class VideoReader:
                 frames[i] = self.get_frame(i+frames_start, *args, **kwargs)
 
         return frames
+
+    def _get_frame_from_cine(self, frame_number):
+        """Reads a single frame from the .cine file.
+
+        :param frame_number: Zero-based frame index
+        :type frame_number: int
+        :return: monochrome image as np.ndarray
+        """
+        # Map 0-based frame index to original cine frame numbers
+        cine_frame_idx = self._cine.first_frame_number + frame_number
+        self._cine.load_frame(cine_frame_idx)
+        return self._cine.frame
+
+    def _get_frames_from_cine(self, frames_start, n_frames):
+        """Reads a range of frames from the .cine file.
+
+        :param frames_start: Start frame index
+        :type frames_start: int
+        :param n_frames: Number of frames to read
+        :type n_frames: int
+        :return: np.ndarray containing the frames in the specified range
+        """
+        cine_frame_idx_start = self._cine.first_frame_number + frames_start
+        return self._cine.load_frames_batch(cine_frame_idx_start, n_frames).transpose(2, 0, 1)
 
     def _get_frame_from_image(self, frame_number, use_channel='Y'):
         """Reads the frame from the image stream, or image file containing multiple images. 
@@ -262,9 +308,12 @@ class VideoReader:
         Close the video and clear the resources.
         In case of a MRAW video, closes the memory map for "mraw" file format.
         """
-        if hasattr(self, 'frames') and self.file_format in PHORTRON_HEADER_FILE:
+        if hasattr(self, '_frames') and self.file_format in PHORTRON_HEADER_FILE:
             self._frames._mmap.close()
             del self._frames
+        elif hasattr(self, "_cine") and self.file_format in CINE_FILE:
+            self._cine.close_file()
+            del self._cine
 
     def gui(self):
         """Starts the GUI for pyIDI."""
