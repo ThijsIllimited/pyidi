@@ -24,7 +24,10 @@ from ..video_reader import VideoReader
 
 from .idi_method import IDIMethod
 from ..progress_bar import progress_bar, rich_progress_bar_setup
-from qtpy.QtWidgets import QApplication
+try:
+    from qtpy.QtWidgets import QApplication
+except ImportError:
+    QApplication = None
 
 class LucasKanade(IDIMethod):
     """
@@ -35,7 +38,7 @@ class LucasKanade(IDIMethod):
     def configure(
         self, roi_size=(9, 9), pad=2, max_nfev=20, 
         tol=1e-8, int_order=3, verbose=1, show_pbar=True, 
-        processes=1, resume_analysis=True, reference_image=0, frame_range='full'
+        processes=1, resume_analysis=False, reference_image=0, frame_range='full'
     ):
         """
         Displacement identification based on Lucas-Kanade method,
@@ -120,7 +123,7 @@ class LucasKanade(IDIMethod):
                     if self.frame_range[1] <= self.video.N:
                         self.stop_time = self.frame_range[1]
                     else:
-                        raise ValueError(f'frame_range can only go to end of video - index {self.video.N}')
+                        raise ValueError(f'frame_range can only go to end of video - up to index {self.video.N}. selected range was: {self.frame_range}')
                 else:
                     raise ValueError('Wrong frame_range definition.')
 
@@ -193,6 +196,11 @@ class LucasKanade(IDIMethod):
         # Time iteration.
         len_of_task = len(range(self.start_time, self.stop_time, self.step_time))
         for ii, i in enumerate(progress_bar(self.start_time, self.stop_time, self.step_time)):
+
+            # if resuming analysis and completed points are available, skip those points
+            if self.resume_analysis and hasattr(self, "completed_points") and self.completed_points > ii:
+                continue
+            
             ii = ii + 1
 
             # Iterate over points.
@@ -206,12 +214,14 @@ class LucasKanade(IDIMethod):
                 G = video.get_frame(i)[yslice, xslice]
 
                 displacements = self.optimize_translations(
-                    G=G, 
-                    F_spline=self.interpolation_splines[p], 
+                    G=G,
+                    F_spline=self.interpolation_splines[p],
                     maxiter=self.max_nfev,
                     tol=self.tol,
-                    d_subpixel_init = -d_res
-                    )
+                    d_subpixel_init=-d_res,
+                    point_index=p,
+                    frame=i
+                )
 
                 self.displacements[p, ii, :] = displacements + d_init
 
@@ -223,7 +233,8 @@ class LucasKanade(IDIMethod):
             if hasattr(self, "progress") and hasattr(self, "task_id"):
                 self.progress[self.task_id] = {"progress": ii + 1, "total": len_of_task}
             # Update progress bar in the GUI
-            QApplication.processEvents()
+            if QApplication is not None and QApplication.instance() is not None:
+                QApplication.processEvents()
                 
         del self.temp_disp
 
@@ -241,11 +252,12 @@ class LucasKanade(IDIMethod):
             self.clear_temp_files()
 
 
-    def optimize_translations(self, G, F_spline, maxiter, tol, d_subpixel_init=(0, 0)):
+    def optimize_translations(self, G, F_spline, maxiter, tol, d_subpixel_init=(0, 0),
+                              point_index=None, frame=None):
         """
         Determine the optimal translation parameters to align the current
         image subset `G` with the interpolated reference image subset `F`.
-        
+
         :param G: the current image subset.
         :type G: array of shape `roi_size`
         :param F_spline: interpolated referencee image subset
@@ -254,9 +266,13 @@ class LucasKanade(IDIMethod):
         :type maxiter: int
         :param tol: convergence criterium
         :type tol: float
-        :param d_subpixel_init: initial subpixel displacement guess, 
+        :param d_subpixel_init: initial subpixel displacement guess,
             relative to the integrer position of the image subset `G`
         :type d_init: array-like of size 2, optional, defaults to (0, 0)
+        :param point_index: index of the point being processed (for error messages)
+        :type point_index: int, optional
+        :param frame: frame number being processed (for error messages)
+        :type frame: int, optional
         :return: the obtimal subpixel translation parameters of the current
             image, relative to the position of input subset `G`.
         :rtype: array of size 2
@@ -266,6 +282,17 @@ class LucasKanade(IDIMethod):
         G_float_clipped = G_float[1:-1, 1:-1]
 
         A_inv = compute_inverse_numba(Gx, Gy)
+
+        if A_inv is None:
+            point_info = f"index {point_index}" if point_index is not None else "unknown"
+            if point_index is not None and hasattr(self, 'points'):
+                point_info += f" (position {self.points[point_index]})"
+            frame_info = f"frame {frame}" if frame is not None else "unknown frame"
+            raise ValueError(
+                f"Degenerate ROI at point {point_info}, {frame_info}. "
+                f"The gradient matrix is singular (flat region or single-direction gradient). "
+                f"Reposition this point away from uniform or edge-only regions."
+            )
 
         # initialize values
         error = 1.
@@ -499,12 +526,24 @@ def worker(points, idi_kwargs, method_kwargs, i, progress, task_id):
 
 
 # @nb.njit
-def compute_inverse_numba(Gx, Gy):
+def compute_inverse_numba(Gx, Gy, tol=1e-10):
+    """
+    Compute the inverse of the gradient matrix for Lucas-Kanade optimization.
+
+    :param Gx: x-gradient of the image subset
+    :param Gy: y-gradient of the image subset
+    :param tol: tolerance for detecting singular matrix
+    :return: inverse matrix, or None if the matrix is near-singular
+    """
     Gx2 = np.sum(Gx**2)
     Gy2 = np.sum(Gy**2)
     GxGy = np.sum(Gx * Gy)
 
-    A_inv = 1/(GxGy**2 - Gx2*Gy2) * np.array([[GxGy, -Gx2], [-Gy2, GxGy]])
+    det = GxGy**2 - Gx2*Gy2
+    if abs(det) < tol:
+        return None  # Near-singular matrix
+
+    A_inv = 1/det * np.array([[GxGy, -Gx2], [-Gy2, GxGy]])
 
     return A_inv
 

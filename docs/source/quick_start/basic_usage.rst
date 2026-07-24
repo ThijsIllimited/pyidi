@@ -5,8 +5,9 @@ Tutorial
 
 ``pyidi`` is a python package for displacement identification from raw video.
 
-Currently the pyIDI method works with Photron ``.cih`` and ``.cihx`` files, however, ``numpy.ndarray`` can
-also be passed as ``cih_file`` argument. If an array is passed, it must have a shape of: ``(n time points, image height, image width)``.
+``VideoReader`` supports Photron ``.cih``/``.cihx`` files, image sequences (PNG, TIFF, BMP, JPEG, GIF),
+standard video files (MP4, AVI, MKV, MOV, and others), ``.SLOW`` files (Pharsighted camera), and
+``numpy.ndarray`` objects of shape ``(n time points, image height, image width)``.
 
 Loading the video
 -----------------
@@ -28,6 +29,8 @@ Available methods are:
 * :py:class:`LucasKanade <pyidi.methods._lucas_kanade.LucasKanade>`
 
 * :py:class:`DirectionalLucasKanade <pyidi.methods._directional_lucas_kanade.DirectionalLucasKanade>`
+
+* :py:class:`DIC <pyidi.methods._dic.DIC>`
 
 To use the Simplified Optical Flow method, the object must be instantiated:
 
@@ -71,6 +74,14 @@ The method can be configured using:
     
     sof.configure(...)
 
+.. note::
+
+    Some of the methods enable the multiprocessing option. By setting the number of processes, the
+    points are divided into groups and each group is processed in a separate process.
+
+    A caveat is that when using the multiprocessing option in a shell (not jupyter notebook), the 
+    code must be run in a ``if __name__ == '__main__':`` block.
+
 
 Get displacement
 ----------------
@@ -108,9 +119,11 @@ The saved analysis can be loaded using the ``load_analysis`` function:
 
 .. code:: python
 
+    from pyidi import load_analysis
+
     analysis_path = 'video_to_analyze_pyidi_analysis/analysis_001'
 
-    video_loaded, info_dict = pyidi.load_analysis(analysis_path)
+    video_loaded, info_dict = load_analysis(analysis_path)
 
 Now we can access the ``video_loaded`` attributes, e.g.:
 

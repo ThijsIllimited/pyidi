@@ -7,7 +7,7 @@ Video Reader
 .. automodule:: pyidi.video_reader
     :members:
 
-IDIMetod base class
+IDIMethod base class
 -------------------
 
 .. automodule:: pyidi.methods.idi_method
@@ -31,10 +31,22 @@ Directional Lucas-Kanade
 .. automodule:: pyidi.methods._directional_lucas_kanade
     :members:
 
+Digital Image Correlation (DIC)
+-------------------------------
+
+.. automodule:: pyidi.methods._dic
+    :members:
+
 Postprocessing
 --------------
 
 .. automodule:: pyidi.postprocessing._motion_magnification
+    :members:
+
+Fiducial markers
+----------------
+
+.. automodule:: pyidi.fiducial
     :members:
 
 pyIDI base class
