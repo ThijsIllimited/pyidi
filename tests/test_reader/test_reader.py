@@ -86,9 +86,10 @@ def test_get_frames_mp4():
 def test_get_frames_cine():
     pytest.importorskip("cine_reader")
     video = pyidi.VideoReader(input_file='./data/data_small_cine.cine')
+    assert video.get_frame(0).shape == (32, 256)
+    assert video.get_frames().shape[0] == 235
     assert video.get_frames(4).shape[0] == 4
     assert video.get_frames((1, 5)).shape[0] == 4
-    # print('test_get_frames_cine: passed')
     return None
 
 if __name__ == '__main__':
