@@ -160,15 +160,20 @@ class DirectionalLucasKanade(IDIMethod):
             self.dij = np.ones_like(self.points) * dij
 
     def set_rigid_body_motion(self, rbm_ij):
+        if not hasattr(self, "N_time_points"):
+            raise ValueError("First run configure")
+
         if rbm_ij is None:
-            if not hasattr(self, "N_time_points"):
-                raise ValueError(f'First run configure')
-                # return
             self.rbm_ij = np.zeros((self.N_time_points, 2))
-        else:
-            self.rbm_ij = np.array(rbm_ij)
-            # if self.rbm_ij.shape != (self.N_time_points, 2):
-                # raise ValueError(f'Ensure a rigid body is prescribed for all time points in 2 directions')
+            self.point_specific_rbm = False
+            return
+
+        rbm_ij = np.asarray(rbm_ij)
+        if rbm_ij.ndim == 2:
+            self.point_specific_rbm = False
+        elif rbm_ij.ndim == 3:
+            self.point_specific_rbm = True
+        self.rbm_ij = rbm_ij
 
     def calculate_displacements(self, **kwargs):
         """
@@ -241,20 +246,27 @@ class DirectionalLucasKanade(IDIMethod):
                 continue
 
             ii = ii + 1
-            rbm = self.rbm_ij[ii]
-            rbm_int = np.round(rbm).astype(int)
-            rbm_res = rbm - rbm_int
+            if not self.point_specific_rbm:
+                rbm = self.rbm_ij[ii]
+                # rbm_int = np.round(rbm).astype(int)
+                # rbm_res = rbm - rbm_int
 
             # Iterate over points.
             for p, (point, dij) in enumerate(zip(self.points, self.dij)):
-                # rbm_res_para = np.dot(rbm_res, dij) * dij
-                # rbm_res_perp = rbm_res - rbm_res_para
+                if self.point_specific_rbm:
+                    rbm = self.rbm_ij[p, ii]
+                    # rbm_int = np.round(rbm).astype(int)
+                    # rbm_res = rbm - rbm_int
                 
                 # start optimization with previous optimal parameter values
-                d_init = np.round(self.displacements[p, ii-1, :]).astype(int)
-                d_res = self.displacements[p, ii-1, :] - d_init
+                # d_init = np.round(self.displacements[p, ii-1, :]).astype(int)
+                # d_res = self.displacements[p, ii-1, :] - d_init
+                di = self.displacements[p, ii-1, :] + rbm
+                d_init = np.round(di).astype(int)
+                d_res = di - d_init
 
-                yslice, xslice = self._padded_slice(point + d_init + rbm_int, self.roi_size, self.image_size, (1,1))
+                # yslice, xslice = self._padded_slice(point + d_init + rbm_int, self.roi_size, self.image_size, (1,1))
+                yslice, xslice = self._padded_slice(point + d_init, self.roi_size, self.image_size, (1,1))
                 G = self.video.get_frame(i)[yslice, xslice].astype(np.float64)
 
                 displacement = self.optimize_translations(
@@ -265,7 +277,8 @@ class DirectionalLucasKanade(IDIMethod):
                     dij = dij,
                     d_subpixel_init = -d_res - rbm_res
                     )
-                self.displacements[p, ii, :] = displacement + d_init - rbm_res
+                # self.displacements[p, ii, :] = displacement + d_init - rbm_res
+                self.displacements[p, ii, :] = displacement + d_init - rbm
 
             # temp
             self.temp_disp[:, ii, :] = self.displacements[:, ii, :]
@@ -472,6 +485,53 @@ class DirectionalLucasKanade(IDIMethod):
         plt.grid(False)
         plt.show()
 
+    def show_rigid_body_motion(self, figsize=(15, 5), cmap='gray', color='r'):
+        """
+        Show rigid body motion trajectories for each point on the reference image.
+
+        For a global RBM, the same trajectory is shown starting from every point.
+        For point-specific RBM, each point is plotted using its own RBM trajectory.
+
+        :param figsize: matplotlib figure size, defaults to (15, 5)
+        :param cmap: matplotlib colormap, defaults to 'gray'
+        :param color: trajectory color, defaults to 'r'
+        """
+        if not hasattr(self, "rbm_ij"):
+            raise ValueError("Rigid body motion has not been set.")
+
+        rbm_ij = np.asarray(self.rbm_ij)
+
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.imshow(self.video.get_frame(0).astype(float), cmap=cmap)
+
+        if self.point_specific_rbm:
+            # rbm_ij: (N_points, N_time, 2)
+            trajectory = self.points[:, None, :] + rbm_ij
+
+        else:
+            # rbm_ij: (N_time, 2)
+            # Broadcast global RBM to all points.
+            trajectory = self.points[:, None, :] + rbm_ij[None, :, :]
+
+        # trajectory: (N_points, N_time, 2)
+        for p in range(len(self.points)):
+            ax.plot(
+                trajectory[p, :, 1],  # x
+                trajectory[p, :, 0],  # y
+                color=color,
+                linewidth=1,
+            )
+
+            ax.plot(
+                self.points[p, 1],
+                self.points[p, 0],
+                marker='.',
+                color=color,
+            )
+
+        plt.grid(False)
+        plt.show()
+
     def temp_files_check_dir(self):
         """Checking the settings of computation.
 
@@ -541,6 +601,10 @@ def multi(video: VideoReader, idi_method: DirectionalLucasKanade, processes, con
     dij = idi_method.dij
     dij_split = tools.split_points(dij, processes=processes)
     rbm_ij = idi_method.rbm_ij
+    if idi_method.point_specific_rbm:
+        rbm_ij_split = tools.split_points(rbm_ij, processes=processes)
+    else:
+        rbm_ij_split = [rbm_ij] * processes
 
 
     idi_kwargs = {
@@ -571,7 +635,7 @@ def multi(video: VideoReader, idi_method: DirectionalLucasKanade, processes, con
                 for n in range(0, len(points_split)):  # iterate over the jobs we need to run
                     # set visible false so we don't have a lot of bars all at once:
                     task_id = progress.add_task(f"task {n} ({len(points_split[n])} points)")
-                    futures.append(executor.submit(worker, points_split[n], dij_split[n], rbm_ij, idi_kwargs, method_kwargs, n, _progress, task_id))
+                    futures.append(executor.submit(worker, points_split[n], dij_split[n], rbm_ij_split[n], idi_kwargs, method_kwargs, n, _progress, task_id))
 
                 # monitor the progress:
                 while sum([future.done() for future in futures]) < len(futures):
