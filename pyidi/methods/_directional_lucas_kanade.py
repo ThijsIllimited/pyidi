@@ -267,39 +267,13 @@ class DirectionalLucasKanade(IDIMethod):
                 continue
 
             ii = ii + 1
-            if not self.point_specific_rbm:
-                rbm = self.rbm_ij[ii]
-                # rbm_int = np.round(rbm).astype(int)
-                # rbm_res = rbm - rbm_int
 
-            # Iterate over points.
-            for p, (point, dij) in enumerate(zip(self.points, self.dij)):
-                if self.point_specific_rbm:
-                    rbm = self.rbm_ij[p, ii]
-                    # rbm_int = np.round(rbm).astype(int)
-                    # rbm_res = rbm - rbm_int
-                
-                # start optimization with previous optimal parameter values
-                # d_init = np.round(self.displacements[p, ii-1, :]).astype(int)
-                # d_res = self.displacements[p, ii-1, :] - d_init
-                di = self.displacements[p, ii-1, :] + rbm
-                d_init = np.round(di).astype(int)
-                d_res = di - d_init
+            # Prescribed rigid-body motion at this time step, one (y, x) row per point.
+            if self.point_specific_rbm:
+                rbm = self.rbm_ij[:, ii]
+            else:
+                rbm = np.broadcast_to(self.rbm_ij[ii], (len(self.points), 2))
 
-                # yslice, xslice = self._padded_slice(point + d_init + rbm_int, self.roi_size, self.image_size, (1,1))
-                yslice, xslice = self._padded_slice(point + d_init, self.roi_size, self.image_size, (1,1))
-                G = self.video.get_frame(i)[yslice, xslice].astype(np.float64)
-
-                displacement = self.optimize_translations(
-                    G=G, 
-                    F_spline=self.interpolation_splines[p], 
-                    maxiter=self.max_nfev,
-                    tol=self.tol,
-                    dij = dij,
-                    d_subpixel_init = -d_res - rbm_res
-                    )
-                # self.displacements[p, ii, :] = displacement + d_init - rbm_res
-                self.displacements[p, ii, :] = displacement + d_init - rbm
             # Read the frame once per time step. Reading it inside the loop over
             # points re-decodes the same frame for every point, which is free for
             # memory-mapped formats but costs a full decode per point for video
@@ -307,9 +281,9 @@ class DirectionalLucasKanade(IDIMethod):
             frame = np.asarray(self.video.get_frame(i))
 
             if use_compiled_kernel:
-                self._optimize_frame_numba(frame, ii, i, rbm_int, rbm_res)
+                self._optimize_frame_numba(frame, ii, i, rbm)
             else:
-                self._optimize_frame_numpy(frame, ii, i, rbm_int, rbm_res)
+                self._optimize_frame_numpy(frame, ii, i, rbm)
 
             # temp
             self.temp_disp[:, ii, :] = self.displacements[:, ii, :]
@@ -460,7 +434,7 @@ class DirectionalLucasKanade(IDIMethod):
             f'attribute.'
         )
 
-    def _optimize_frame_numpy(self, frame, ii, i, rbm_int, rbm_res):
+    def _optimize_frame_numpy(self, frame, ii, i, rbm):
         """Run the reference NumPy optimization for all points of a single frame.
 
         :param frame: the current frame
@@ -469,10 +443,8 @@ class DirectionalLucasKanade(IDIMethod):
         :type ii: int
         :param i: frame number in the video (for error messages)
         :type i: int
-        :param rbm_int: integer part of the prescribed rigid-body motion
-        :type rbm_int: ndarray of size 2
-        :param rbm_res: sub-pixel remainder of the prescribed rigid-body motion
-        :type rbm_res: ndarray of size 2
+        :param rbm: prescribed rigid-body motion at this time step
+        :type rbm: ndarray of shape (n_points, 2)
         """
         # Iterate over points.
         for p, (point, dij) in enumerate(zip(self.points, self.dij)):
@@ -497,14 +469,13 @@ class DirectionalLucasKanade(IDIMethod):
                 self._record_failed_point(p, i, _lk_kernels.STATUS_DIVERGED)
                 continue
 
-            rbm_res_para = np.dot(rbm_res, dij) * dij
-            rbm_res_perp = rbm_res - rbm_res_para
+            # start optimization with previous optimal parameter values,
+            # shifted by the prescribed rigid-body motion
+            di = previous + rbm[p]
+            d_init = np.round(di).astype(int)
+            d_res = di - d_init
 
-            # start optimization with previous optimal parameter values
-            d_init = np.round(previous).astype(int)
-            d_res = previous - d_init
-
-            yslice, xslice = self._padded_slice(point + d_init + rbm_int, self.roi_size,
+            yslice, xslice = self._padded_slice(point + d_init, self.roi_size,
                                                 self.image_size, (1, 1))
             G = frame[yslice, xslice].astype(np.float64)
 
@@ -515,7 +486,7 @@ class DirectionalLucasKanade(IDIMethod):
                     maxiter=self.max_nfev,
                     tol=self.tol,
                     dij=dij,
-                    d_subpixel_init=-d_res + rbm_res,
+                    d_subpixel_init=-d_res,
                     point_index=p,
                     frame=i
                 )
@@ -524,7 +495,7 @@ class DirectionalLucasKanade(IDIMethod):
                 self._record_failed_point(p, i, _lk_kernels.STATUS_SINGULAR)
                 continue
 
-            result = displacement + d_init - rbm_res - rbm_res_perp
+            result = displacement + d_init - rbm[p]
             if self._displacement_is_sane(result):
                 self.displacements[p, ii, :] = result
             else:
@@ -533,7 +504,7 @@ class DirectionalLucasKanade(IDIMethod):
                 self.displacements[p, ii, :] = np.nan
                 self._record_failed_point(p, i, _lk_kernels.STATUS_DIVERGED)
 
-    def _optimize_frame_numba(self, frame, ii, i, rbm_int, rbm_res):
+    def _optimize_frame_numba(self, frame, ii, i, rbm):
         """Run the compiled kernel for all points of a single frame.
 
         :param frame: the current frame
@@ -542,10 +513,8 @@ class DirectionalLucasKanade(IDIMethod):
         :type ii: int
         :param i: frame number in the video (for error messages)
         :type i: int
-        :param rbm_int: integer part of the prescribed rigid-body motion
-        :type rbm_int: ndarray of size 2
-        :param rbm_res: sub-pixel remainder of the prescribed rigid-body motion
-        :type rbm_res: ndarray of size 2
+        :param rbm: prescribed rigid-body motion at this time step
+        :type rbm: ndarray of shape (n_points, 2)
         """
         _lk_kernels.optimize_frame_directional(
             frame,
@@ -554,7 +523,7 @@ class DirectionalLucasKanade(IDIMethod):
             self._nb_tx,
             self._nb_ty,
             self._nb_coeffs,
-            self.displacements[:, ii-1, :],
+            self.displacements[:, ii-1, :] + rbm,
             self._nb_out,
             self._nb_status,
             self._nb_clamped,
@@ -564,10 +533,10 @@ class DirectionalLucasKanade(IDIMethod):
             1,
             self.max_nfev,
             self.tol,
-            int(rbm_int[0]),
-            int(rbm_int[1]),
-            float(rbm_res[0]),
-            float(rbm_res[1]),
+            0,
+            0,
+            0.0,
+            0.0,
         )
 
         if not self._edge_warning_issued and self._nb_clamped.any():
@@ -576,7 +545,8 @@ class DirectionalLucasKanade(IDIMethod):
                 'to image border. Please check analysis settings.')
             self._edge_warning_issued = True
 
-        self.displacements[:, ii, :] = self._nb_out
+        # The kernel works on the displacement including the rigid-body motion.
+        self.displacements[:, ii, :] = self._nb_out - rbm
 
         # A point that fails is lost from this time step onwards. Mark it NaN and
         # carry on with the rest: in a several-hundred-point analysis a handful of
@@ -1066,7 +1036,7 @@ def _warm_up_kernels(video: VideoReader, method_kwargs: dict):
         pass
 
 
-def worker(points, directions, idi_kwargs, method_kwargs, i, progress, task_id):
+def worker(points, directions,rbm, idi_kwargs, method_kwargs, i, progress, task_id):
     """
     A function that is called when for each job in multiprocessing.
     """
@@ -1084,7 +1054,7 @@ def worker(points, directions, idi_kwargs, method_kwargs, i, progress, task_id):
     idi.configure_multiprocessing(i+1, progress, task_id) # configure the multiprocessing settings
     idi.set_points(points)
     idi.set_directions(directions)
-    idi.set_rigid_body_motion(rbm_ij)
+    idi.set_rigid_body_motion(rbm)
     displacements = idi.get_displacements(autosave=False)
 
     # The point indices are local to this worker; the parent maps them back.
