@@ -61,7 +61,8 @@ class Viewer(QtWidgets.QMainWindow):
         video : np.ndarray or VideoReader
             Array of shape (n_frames, height, width) containing the video frames.
         displacements : np.ndarray
-            Array of shape (n_frames, n_points, 2) for time-series displacements OR
+            Array of shape (n_points, n_frames, 2) for time-series displacements
+            (as returned by ``get_displacements``) OR
             Array of shape (n_points, 2) for mode shapes.
         points : np.ndarray
             Array of shape (n_points, 2) containing the grid points.
@@ -97,12 +98,16 @@ class Viewer(QtWidgets.QMainWindow):
                 self.displacements = displacements[:, ::-1]  # Flip x,y coordinates
                 self.time_per_period = 1.0 # Seconds
             else:
-                # Time-series displacements: shape (n_frames, n_points, 2)
+                # Time-series displacements: shape (n_points, n_frames, 2)
                 self.is_mode_shape = False
                 self.displacements = displacements[:, :, ::-1]  # Flip x,y coordinates
 
             self.grid = points[:, ::-1] + 0.5  # Flip x,y coordinates
-            self.disp_max = np.max(np.abs(displacements))
+            abs_displacements = np.abs(displacements)
+            if np.all(np.isnan(abs_displacements)):
+                self.disp_max = 1.0  # fallback when every point failed to track
+            else:
+                self.disp_max = np.nanmax(abs_displacements)
         else:
             self.displacements = None
             self.grid = None

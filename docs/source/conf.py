@@ -24,9 +24,9 @@ copyright = '2019, Klemen Zaletelj, Domen Gorjup, Janko Slavič'
 author = 'Klemen Zaletelj, Domen Gorjup, Janko Slavič'
 
 # The short X.Y version
-version = '1.3'
+version = '1.4'
 # The full version, including alpha/beta/rc tags
-release = '1.3.3'
+release = '1.4.0'
 
 
 # -- General configuration ---------------------------------------------------
@@ -40,12 +40,35 @@ release = '1.3.3'
 # ones.
 extensions = [
     'sphinx.ext.autodoc',
+    'sphinx.ext.autosummary',
+    'sphinx.ext.napoleon',
+    'sphinx.ext.intersphinx',
     'sphinx.ext.mathjax',
     'sphinx.ext.ifconfig',
     'sphinx.ext.viewcode',
     'sphinx.ext.githubpages',
     'sphinx_copybutton',
+    'sphinx_design',
+    'myst_parser',
 ]
+
+# MyST is enabled so that Markdown files kept at the repository root (the
+# changelog) can be included in the build without being converted to rst.
+myst_enable_extensions = ['colon_fence', 'deflist']
+# changelog.rst supplies the page title and includes CHANGELOG.md from its
+# first release heading on, so the included fragment starts at H2 by design.
+suppress_warnings = ['myst.header']
+myst_heading_anchors = 3
+
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/3', None),
+    'numpy': ('https://numpy.org/doc/stable/', None),
+    'scipy': ('https://docs.scipy.org/doc/scipy/', None),
+    'matplotlib': ('https://matplotlib.org/stable/', None),
+    'napari': ('https://napari.org/stable/', None),
+}
+# Do not fail the build when an inventory cannot be downloaded (offline builds).
+intersphinx_disabled_reftypes = ['*.std:doc']
 
 # Defined here: https://sphinx-copybutton.readthedocs.io/en/latest/use.html#using-regexp-prompt-identifiers (the >>> are not copied)
 copybutton_prompt_text = r">>> |\.\.\. |\$ |In \[\d*\]: | {2,5}\.\.\.: | {5,8}: "
@@ -53,11 +76,21 @@ copybutton_prompt_is_regexp = True
 
 autodoc_default_options = {
     'members': True,
-    'private-members': True,
     'special-members': '__init__',
     'member-order': 'bysource',
     'show-inheritance': None,
 }
+autodoc_member_order = 'bysource'
+autodoc_typehints = 'description'
+
+# The GUI classes are documented from their docstrings, but Read the Docs
+# installs only ``docs/requirements.txt`` and so has neither Qt nor napari.
+# Mocking the toolkits lets autodoc import the modules and read the
+# docstrings without a display or the ``[qt]`` extra.
+autodoc_mock_imports = ['PyQt6', 'pyqtgraph', 'qtpy', 'napari', 'magicgui']
+
+napoleon_google_docstring = True
+napoleon_numpy_docstring = True
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -66,7 +99,10 @@ templates_path = ['_templates']
 # You can specify multiple suffix as a list of string:
 #
 # source_suffix = ['.rst', '.md']
-source_suffix = '.rst'
+source_suffix = {
+    '.rst': 'restructuredtext',
+    '.md': 'markdown',
+}
 
 # The master toctree document.
 master_doc = 'index'
@@ -92,19 +128,29 @@ pygments_style = None
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-# html_theme = 'sphinx_rtd_theme'
 html_theme = 'sphinx_book_theme'
 
-# Theme options are theme-specific and customize the look and feel of a theme
-# further.  For a list of options available for each theme, see the
-# documentation.
-#
-# html_theme_options = {}
+html_title = f'pyIDI {release}'
+
+html_theme_options = {
+    'repository_url': 'https://github.com/ladisk/pyidi',
+    'repository_branch': 'master',
+    'path_to_docs': 'docs/source',
+    'use_repository_button': True,
+    'use_issues_button': True,
+    'use_edit_page_button': True,
+    'use_download_button': False,
+    'home_page_in_toc': True,
+    'show_toc_level': 2,
+    'navigation_with_keys': False,
+    'article_header_start': [],
+}
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ["_static"]
+html_static_path = ['_static']
+html_css_files = ['custom.css']
 
 # Custom sidebar templates, must be a dictionary that maps document names
 # to template names.

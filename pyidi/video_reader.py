@@ -154,11 +154,13 @@ class VideoReader:
 
         :param frame_number: frame number
         :type frame_number: int
-        :param args: additional arguments to be passed to the image readers to handle 
-        multiple channels in image
-        :param kwargs: additional keyword arguments forwarded to image/video reader methods
+        :param args: additional arguments to be passed to the image readers to
+            handle multiple channels in image
+        :param kwargs: additional keyword arguments forwarded to image/video
+            reader methods
         :type kwargs: dict
         :return: image (monochrome)
+        :rtype: numpy.ndarray
         """
         if not 0 <= frame_number < self.N:
             raise ValueError("Frame number exceeds total frame number!")
@@ -492,7 +494,9 @@ class VideoReader:
             self.image_width = image_prop.shape[2]
             self.image_height = image_prop.shape[1]
             if not getattr(self, "fps", False):
-                self.configure(fps=image_meta.get("fps", None))
+                fps = image_meta.get("fps")
+                if fps:  # Not all multi-image files carry the fps metadata
+                    self.configure(fps=fps)
 
     def _initialise_video_files(self, input_file):
         """Initialise reader state for video containers handled by ``pyav``.

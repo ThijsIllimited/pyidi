@@ -8,15 +8,16 @@ on:
 permissions:
   contents: write
   packages: write
+  id-token: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
-    - uses: actions/setup-python@v5
+    - uses: actions/setup-python@v7
       with:
         python-version: 3.11
 
@@ -58,7 +59,4 @@ jobs:
         files: dist/*.whl
 
     - name: Publish to PyPI
-      uses: pypa/gh-action-pypi-publish@v1.13.0
-      with:
-        user: __token__
-        password: ${{ secrets.PYPI_API_TOKEN }}
+      uses: pypa/gh-action-pypi-publish@v1.14.2
